@@ -41,15 +41,20 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
             interp_grid.append([l, f])
     
     interp_grid = np.array(interp_grid)
-    BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-    TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-    BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-    TH_fact = interp_grid[:,0]*interp_grid[:,1]
+    # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+    # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+    # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+    # TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
+    fine_grid_size = sc.DIV_LAT_NUM*sc.DIV_FREQ_NUM
+
     
     #print BL_fact
     #print interp_grid
     
     out_data = []
+
+    # Loop over incident ray latitudes:
     for x in xrange(len(in_lats)-1):
 
         print "Ray starting at %g degrees"%in_lats[x]
@@ -80,17 +85,29 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         t = np.linspace(0, sc.T_MAX, sc.NUM_STEPS)  # New sampling grid
         
         #BL_unif = interp_dataframe(BL, t, 'TG',['LAT','power','ELE'])
-        BL_unif = interp_dataframe(BL, t, 'TG')
-        BH_unif = interp_dataframe(BH, t, 'TG')
-        TL_unif = interp_dataframe(TL, t, 'TG')
-        TH_unif = interp_dataframe(TH, t, 'TG')
+
+        # Interpolating class -- initially interpolates onto a uniform time grid,
+        # then can be called to get interpolated time vectors between the four corner vectors
+        R = ray_interpolator(BL, TL, BH, TH, t)
+
+
+
+        # BL_unif = interp_dataframe(BL, t, 'TG')
+        # BH_unif = interp_dataframe(BH, t, 'TG')
+        # TL_unif = interp_dataframe(TL, t, 'TG')
+        # TH_unif = interp_dataframe(TH, t, 'TG')
+
+        # BL_unif = R.BL
+        # BH_unif = R.BH
+        # TL_unif = R.TL
+        # TH_unif = R.TH
 
         # Next: Interpolate over frequency, check for crossings, etc
         # Mask off any values for which all four rays are more than L_MARGIN
         # away from the target field line
         # (Not outside --> coarse-grained points that may have crossings)
         
-        mask = ~outside_L(BL_unif, BH_unif, TL_unif, TH_unif, L_shells)
+        mask = ~outside_L(R.BL, R.BH, R.TL, R.TH, L_shells)
 
         # Also get one timestep previous - so we can tell the direction of the segment
         mask_prev = np.roll(mask,-1)    
@@ -98,46 +115,67 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         # Interpolate yet again (just the hits only) over the fine-scale spatial grid:
         if any(mask):
             print "testing %g cases (coarse grid)"%(np.sum(mask))
-            # Current timestep of ray, interpolated onto fine grid
-            l_int       = (np.outer(BL_unif[mask].ELE, BL_fact) + 
-                           np.outer(TL_unif[mask].ELE, TL_fact) + 
-                           np.outer(BH_unif[mask].ELE, BH_fact) + 
-                           np.outer(TH_unif[mask].ELE, TH_fact)).ravel()
-            
-            lat_int     = (np.outer(BL_unif[mask].LAT, BL_fact) +
-                           np.outer(TL_unif[mask].LAT, TL_fact) + 
-                           np.outer(BH_unif[mask].LAT, BH_fact) + 
-                           np.outer(TH_unif[mask].LAT, TH_fact)).ravel()
 
-            # Previous timestep of ray, interpolated onto fine grid
-            l_int_prev  = (np.outer(BL_unif[mask_prev].ELE, BL_fact) +
-                           np.outer(TL_unif[mask_prev].ELE, TL_fact) + 
-                           np.outer(BH_unif[mask_prev].ELE, BH_fact) +
-                           np.outer(TH_unif[mask_prev].ELE, TH_fact)).ravel()
-            
-            lat_int_prev = (np.outer(BL_unif[mask_prev].LAT, BL_fact) +
-                            np.outer(TL_unif[mask_prev].LAT, TL_fact) + 
-                            np.outer(BH_unif[mask_prev].LAT, BH_fact) + 
-                            np.outer(TH_unif[mask_prev].LAT, TH_fact)).ravel()
+            l_int        = R.all_vals_at(interp_grid, 'ELE', mask)
+            lat_int      = R.all_vals_at(interp_grid, 'LAT', mask)
+
+            l_int_prev   = R.all_vals_at(interp_grid, 'ELE', mask_prev)
+            lat_int_prev = R.all_vals_at(interp_grid, 'LAT', mask_prev)
 
             # Now we have lists of fine-scale interpolated L-shell and latitudes
             # for two timesteps, at each instance where we might have some crossings.
             # --> Go through the (l, lat, l_prev, lat_prev) lists and check for
             #     overlap with any of the simulation EA segments.
             
-            t_inds, ea_inds = check_crossings(l_int, lat_int, l_int_prev, lat_int_prev, L_shells)
+            cross_inds, ea_inds, cross_coords = check_crossings(l_int, lat_int, l_int_prev, lat_int_prev, L_shells)
+            #print cross_inds
             
+            # unravel the indices in the cross_inds list, to get time and weight indices
+            mask_inds, fine_grid_inds =  np.unravel_index(cross_inds, (sum(mask), fine_grid_size))
+            #print mask_inds
+            #print fine_grid_inds
+            # tmp = np.where(mask)[0]
+            
+            # print tmp
+            # print tmp[mask_inds]
 
-            #out_data.append(cross_inds)
+            # Time indexes in full ray -- index of confirmed crossings in the masked-off array
+            time_inds = np.where(mask)[0][mask_inds]
+            
+            #print BL_fact[fine_grid_inds], TL_fact[fine_grid_inds], BH_fact[fine_grid_inds], TH_fact[fine_grid_inds]
+            #print R.BL[time_inds]
+            #print sum(R.BL['ELE'][mask] - R.BL[mask]['ELE'])
+            #print max(time_inds), min(time_inds)
+            # To confirm: Let's interpolate again and make sure we've got the right values for l and lat:
+            #lcheck   = R.vals_at(interp_grid[fine_grid_inds,:],'ELE',mask=time_inds)
+            #latcheck = R.vals_at(interp_grid[fine_grid_inds,:],'LAT',mask=time_inds)
+
+            #print lat_int[cross_inds]
+            #print latcheck
+            # print lcheck
+            # print latcheck
+
+            df_fine = R.dataframe_at(interp_grid[fine_grid_inds,:],time_inds)
+            df_fine['cross_coords'] = cross_coords
+            
+            # print sum(abs(df_fine['ELE'] - l_int[cross_inds]))
+            # print sum(abs(df_fine['LAT'] - lat_int[cross_inds]))
+            #print df_fine['cross_coords']
+
+            out_data.append(cross_coords)
     
-    #return out_data
+    return out_data
+
+
 
 def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     ''' Finds line segments which cross L_target;
-        returns indices of the entries to interpolate over.
+        returns indices of the entries which cross an equal-area segment
         inputs: l, lat: L-shell and latitude arrays at current timestep
                 l_prev, lat_prev: L-shell and latitude arrays at previous timestep
                 L_target: L-shell to check crossings at
+        outputs: 
+        time_index, ea_index: vectors of index values 
     '''
 
     # Generate the equal-area array
@@ -180,22 +218,23 @@ def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     # Rows and columns where mask is true:
     mr, mc = np.where(mask)
 
-    # mr: index in time series
+    # mr: index in l and lat
     # mc: index in EA array
-    return mr, mc
+    #return mr, mc
 
     #outs = zip(mr,mc)
     # row: index in time series
     # col: index in EA
 
     # # Same format as before (with Cartesian coordinates for the ray segments)
-    # out_inds = zip(mr,mc)
-    # out_cartesian = dict()
-    # for o in out_inds:
-    #     #print o[0]
-    #     out_cartesian[o[0]] = [(x1ray[o[0]], y1ray[o[0]]),(x2ray[o[0]],y2ray[o[0]])]
+    out_inds = zip(mr,mc)
+    out_cartesian = dict()
+    for o in out_inds:
+        #print o[0]
+        out_cartesian[o[0]] = [(x1ray[o[0]], y1ray[o[0]]),(x2ray[o[0]],y2ray[o[0]])]
 
-    # return out_cartesian
+
+    return mr, mc, out_cartesian
 
 # ------------------------------
 #     Loop version (slower, but easier to read)
@@ -358,6 +397,8 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long =
 
 
 
+
+
 def gen_EA_array(L):
     ''' Returns a dataframe of parameters for the EA (equal area) slices
         on which scattering is to be calculated. A clone of Jacob's initEA_Arr method.
@@ -366,7 +407,6 @@ def gen_EA_array(L):
                 L_vector: List of L-shells we're computing on
         Outputs: a dataframe.
     '''
-
 
     # latitude vector (including endpoints)
     lam_vec = np.arange(sc.EALimS,sc.EALimN + sc.EAIncr, step=sc.EAIncr)
@@ -386,7 +426,7 @@ def gen_EA_array(L):
     y_unit_vect = (3*slam*clam) / rootTerm
 
 
-    ptR = L*clam2  # Distance to field line (dipole model: r ~ L cos(latitude)^2 )
+    ptR = L*clam2       # Distance to field line (dipole model: r ~ L cos(latitude)^2 )
     ptX = ptR*clam      # Field line in Cartesian coordinates
     ptY = ptR*slam
 
@@ -410,6 +450,57 @@ def gen_EA_array(L):
     d['y2'] = y2
 
     return d
+
+
+class ray_interpolator(object):
+    def __init__(self, BL, TL, BH, TH, t):
+        '''Inputs: bottom low, bottom high, top low, top high interpolating factors'''
+        # Interpolate dataframes onto a uniform time grid:
+        self.BL = interp_dataframe(BL, t, 'TG')
+        self.BH = interp_dataframe(BH, t, 'TG')
+        self.TL = interp_dataframe(TL, t, 'TG')
+        self.TH = interp_dataframe(TH, t, 'TG')
+
+    def all_vals_at(self, interp_grid, val_name, mask):
+        '''Returns interpolated values at each time step, and each factor.
+           interp_grid: two-column array -- (t, f) interpolating values, 0 to 1.
+           val_name: name of the column to interpolate
+           mask: binary mask of time bins to look at '''
+        # Interpolating weights:
+        BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+        TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+        BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+        TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
+        return (np.outer(self.BL[val_name][mask], BL_fact) + 
+                    np.outer(self.BH[val_name][mask], TL_fact) + 
+                    np.outer(self.TL[val_name][mask], BH_fact) + 
+                    np.outer(self.TH[val_name][mask], TH_fact)).ravel()
+
+    def vals_at(self, interp_grid, val_name, mask):
+        ''' Same thing, but without the outer product. mask and factors must be same length.
+           BL, TL, BH, TH: Interpolating weights (vectors).
+           val_name: name of the column to interpolate
+           mask: binary mask of time bins to look at '''
+        BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+        TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+        BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+        TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
+        return (self.BL[val_name][mask]*BL_fact + 
+                self.BH[val_name][mask]*TL_fact + 
+                self.TL[val_name][mask]*BH_fact + 
+                self.TH[val_name][mask]*TH_fact)
+
+    def dataframe_at(self, interp_grid, mask):
+
+        cols = self.BL.columns.values
+        df = pd.DataFrame()
+
+        for c in cols:
+            df[c] = self.vals_at(interp_grid, c, mask)
+
+        return df
 
 if __name__ =='__main__':
     directory = '/shared/users/asousa/WIPP/WIPPy/python/'

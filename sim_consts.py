@@ -17,12 +17,12 @@ H_E = 5000      # Lightning incident height, in meters? (Confirm this pls)
 
 # Scattering code simulation params:
 T_MAX = 30
-NUM_STEPS =  30000 #30000
+NUM_STEPS =  1000 #30000
 T_STEP = T_MAX/NUM_STEPS
 
 
 # Number of steps in fine-grid interpolation:
-DIV_LAT_NUM = 5
+DIV_LAT_NUM = 6
 DIV_FREQ_NUM = 3
 
 # EA array grid settings:
