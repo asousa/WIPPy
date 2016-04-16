@@ -33,14 +33,17 @@ def load_rayfile(directory, frequency):
     df = pd.read_csv(full_filename,header=None,delim_whitespace=True)
 
     # Rename columns (keeping consistency with previous scripts, sorry for shouting)
-    df.columns=['TG','DRE','LAT','DELTA','TP','ELE','PSIG','PSIRAY','PSIRG','AN','ANE','ANH','ANHE','ANO','GF','AP','AR','AL']    
-
+    # This version as used in the raytracer
+    #df.columns=['TG','DRE','LAT','DELTA','TP','ELE','PSIG','PSIRAY','PSIRG','AN','ANE','ANH','ANHE','ANO','GF','AP','AR','AL']    
+    # This version as used in Jacob's code
+    #df.columns=['tg','distre','lat','delta','tp','l_sh','psi','psiray','psires','mu','dens','anH','anHe','anO','fH','stixP','stixR','stixL']
+    df.columns=['tg','distre','lat','delta','tp','l_sh','psi','psiray','psires','mu','dens','anH','anHe','anO','fH','stixP','stixR','stixL']    
 
     # Delete the first two bogus rows
     #df.drop(df.index[0],inplace=True)
     
     # Find start and end indices of rays (a little obnoxious -- rays are stacked and marked with a "99999" in the TG column to separate)
-    i9_inds = df[df['TG']==99999].index
+    i9_inds = df[df['tg']==99999].index
     k1 = i9_inds[:-1] + 1
     k2 = i9_inds[1:]
 
@@ -57,10 +60,9 @@ def load_rayfile(directory, frequency):
     ray_dict = {}
     for x in xrange(len(k1)):
         #print int(df.iloc[k1[x]+1].LAT)
-        ray_dict[int(df.iloc[k1[x]].LAT)] = df.iloc[k1[x]:k2[x]]
-        ray_dict[int(df.iloc[k1[x]].LAT)].lat  = int(df.iloc[k1[x]].LAT)
-        ray_dict[int(df.iloc[k1[x]].LAT)].frequency  = frequency
-        
+        ray_dict[int(df.iloc[k1[x]].lat)] = df.iloc[k1[x]:k2[x]]
+        ray_dict[int(df.iloc[k1[x]].lat)].launch_lat  = int(df.iloc[k1[x]].lat)
+        ray_dict[int(df.iloc[k1[x]].lat)].frequency  = frequency
         
     #print ray_dict.keys()
     return ray_dict

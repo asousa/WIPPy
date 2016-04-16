@@ -15,6 +15,7 @@ from ionoAbsorp import ionoAbsorp
 import matplotlib.pyplot as plt
 from scipy import interpolate
 import itertools
+import time
 
 
 
@@ -52,7 +53,13 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
     #print BL_fact
     #print interp_grid
     
-    out_data = []
+    # A dataframe of interpolated ray parameters for every EA crossing
+    out_data = pd.DataFrame()
+
+    # Execution time
+    tstart = time.time()
+
+
 
     # Loop over incident ray latitudes:
     for x in xrange(len(in_lats)-1):
@@ -71,10 +78,10 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         MAX_POWER = lightning_power(I0, center_lat, dlat, dfreq, 4000, center_lat, 0.7)
 
         # (initPwr)
-        BL.power = BL.power*lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.lat, 0.7);
-        BH.power = BH.power*lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.lat, 0.7);
-        TL.power = TL.power*lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.lat, 0.7);
-        TH.power = TH.power*lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.lat, 0.7);
+        BL.power = BL.power*lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
+        BH.power = BH.power*lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.launch_lat, 0.7);
+        TL.power = TL.power*lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
+        TH.power = TH.power*lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
 
         BL.scaled = True
         BH.scaled = True
@@ -91,17 +98,6 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         R = ray_interpolator(BL, TL, BH, TH, t)
 
 
-
-        # BL_unif = interp_dataframe(BL, t, 'TG')
-        # BH_unif = interp_dataframe(BH, t, 'TG')
-        # TL_unif = interp_dataframe(TL, t, 'TG')
-        # TH_unif = interp_dataframe(TH, t, 'TG')
-
-        # BL_unif = R.BL
-        # BH_unif = R.BH
-        # TL_unif = R.TL
-        # TH_unif = R.TH
-
         # Next: Interpolate over frequency, check for crossings, etc
         # Mask off any values for which all four rays are more than L_MARGIN
         # away from the target field line
@@ -116,11 +112,11 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         if any(mask):
             print "testing %g cases (coarse grid)"%(np.sum(mask))
 
-            l_int        = R.all_vals_at(interp_grid, 'ELE', mask)
-            lat_int      = R.all_vals_at(interp_grid, 'LAT', mask)
+            l_int        = R.all_vals_at(interp_grid, 'l_sh', mask)
+            lat_int      = R.all_vals_at(interp_grid, 'lat', mask)
 
-            l_int_prev   = R.all_vals_at(interp_grid, 'ELE', mask_prev)
-            lat_int_prev = R.all_vals_at(interp_grid, 'LAT', mask_prev)
+            l_int_prev   = R.all_vals_at(interp_grid, 'l_sh', mask_prev)
+            lat_int_prev = R.all_vals_at(interp_grid, 'lat', mask_prev)
 
             # Now we have lists of fine-scale interpolated L-shell and latitudes
             # for two timesteps, at each instance where we might have some crossings.
@@ -156,17 +152,236 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
             # print latcheck
 
             df_fine = R.dataframe_at(interp_grid[fine_grid_inds,:],time_inds)
-            df_fine['cross_coords'] = cross_coords
-            
+            df_fine['cross_coords'] = cross_coords  # Cartesian coordinates of start and endpoints (for plotting)
+            df_fine['EA_index'] = ea_inds           # Index of which EA array it intercepts
+
+
+            #print df_fine
             # print sum(abs(df_fine['ELE'] - l_int[cross_inds]))
             # print sum(abs(df_fine['LAT'] - lat_int[cross_inds]))
             #print df_fine['cross_coords']
+            print np.shape(df_fine)
 
-            out_data.append(cross_coords)
-    
+            out_data = pd.concat([out_data, df_fine])
+
+
+
+    tstop = time.time()
+    print "Elapsed time (Interpolation and crossing detection): %g seconds"%(tstop - tstart) 
+
     return out_data
 
 
+
+def calc_resonant_pitchangle_change(crossing_df, L_target):
+
+    # Start timer
+    tstart = time.time()
+    # Generate energy and velocity arrays
+    E_tot_arr = pow(10,sc.E_EXP_BOT + sc.DE_EXP*np.arange(0,sc.NUM_E))
+    v_tot_arr = sc.C*np.sqrt(1 - pow(sc.E_EL/(sc.E_EL + E_tot_arr),2))
+
+
+    L = L_target
+
+    epsm = (1/L)*(sc.R_E + sc.H_IONO)/sc.R_E
+    alpha_eq = np.arcsin(np.sqrt( pow(epsm, 3)/np.sqrt(1 + 3*(1 - epsm))  ))
+
+
+    # Gen EA array (maybe pass this as an arg)
+    EA_array = gen_EA_array(L_target)
+
+
+    tstop = time.time()
+
+    #print EA_array
+    # Loop through EA segments:
+    #for EA_ind, EA_row in EA_array.iterrows():
+    for EA_ind in np.unique(crossing_df['EA_index']):   
+        #print EA_ind
+
+        lat = EA_array['lam'][EA_ind]
+        print 'EA segment at latitude = ',lat
+
+        slat = np.sin(lat*sc.D2R)
+        clat = np.cos(lat*sc.D2R)
+        slat_term = np.sqrt(1 + 3*slat*slat)
+
+        # Magnetic field at current location
+        #B_local = sc.B_eq*slat_term/(pow(clat,6))
+
+
+        # Lower hybrid frequency
+        wh = (sc.Q_EL*sc.B0/sc.M_EL)*(1/pow(L,3))*slat_term/pow(clat,6)
+        #wh = (2*np.pi*880000) / (pow(L,3)*slat_term/pow(clat,6))       # Jacob used a hard coded value for qB/m
+        dwh_ds = (3*wh/(L*sc.R_E)) *(slat/slat_term) * (1/pow(slat_term,2) + 2/pow(clat,2))
+
+        # flight time constants (divide by velocity to get time to ionosphere, in seconds)
+        ftc_N, ftc_S = get_flight_time_constant(L, lat, alpha_eq)
+
+        # Local loss cone angle
+        alpha_lc = np.arcsin(np.sqrt(slat_term/pow(clat,6) )*np.sin(alpha_eq))
+        salph = np.sin(alpha_lc)
+        calph = np.cos(alpha_lc)
+
+        ds = L*sc.R_E*slat_term*clat*sc.EAIncr*np.pi
+        # # Sometimes Python is pretty and readable, but now is not one of those times
+        # for cell_ind, cells in crossing_df[crossing_df['EA_index'] == EA_ind].iterrows():
+        #     print np.shape(cell)
+
+        # Mask out just the entries which cross the current EA segment:
+        cells = crossing_df[crossing_df['EA_index'] == EA_ind]
+
+        if cells.shape[0] > 0:
+            print cells.shape
+            #print cells.columns
+
+            # where you left off: time and frequency (line 1800)
+            t = cells.tg + sc.DT/2.0
+            f = cells.frequency + sc.DF/2.0
+            pwr = cells.power/sc.DT       # Jacob divides by num_rays too, but it looks like it's always 1
+            psi = cells.psi*sc.D2R       
+
+            # Maybe threshold power here?
+
+            # Misc. parameters and trig
+            mu = cells.mu
+            stixP = cells.stixP
+            stixR = cells.stixR
+            stixL = cells.stixL
+
+            spsi = np.sin(psi)
+            cpsi = np.cos(psi)
+            spsi_sq = pow(spsi,2)
+            cpsi_sq = pow(cpsi,2)
+            n_x  = mu*abs(spsi)
+            n_z  = mu*cpsi
+            mu_sq = mu*mu
+            w = 2.0 * np.pi * f
+            k = w*mu/sc.C
+            kx = w*n_x/sc.C
+            kz = w*n_z/sc.C
+            Y = wh / w
+
+            stixS = (stixR + stixL)/2.0
+            stixD = (stixR - stixL)/2.0
+            stixA = stixS + (stixP-stixS)*cpsi_sq
+            stixB = stixP*stixS + stixR*stixL + (stixP*stixS - stixR*stixL)*cpsi_sq
+            stixX = stixP/(stixP - mu_sq*spsi_sq)
+          
+            rho1=((mu_sq-stixS)*mu_sq*spsi*cpsi)/(stixD*(mu_sq*spsi_sq-stixP))
+            rho2 = (mu_sq - stixS) / stixD
+
+            Byw_sq = ( (2.0*sc.MU0/sc.C) * (pwr*stixX*stixX*rho2*rho2*mu*abs(cpsi)) /
+                     np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
+
+            # RMS wave components
+            Byw = np.sqrt(Byw_sq);
+            Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
+            Eyw = abs(Exw * stixD/(stixS-mu_sq))
+            Ezw = abs(Exw *n_x*n_z / (n_x*n_x - stixP))
+            Bxw = abs((Exw *stixD*n_z/sc.C)/ (stixS - mu_sq))
+            Bzw = abs((Exw *stixD *n_x) /(sc.C*(stixX - mu_sq)));
+
+            # Oblique integration quantities
+            R1 = (Exw + Eyw)/(Bxw+Byw)
+            R2 = (Exw - Eyw)/(Bxw-Byw)
+            w1 = (sc.Q_EL/(2*sc.M_EL))*(Bxw+Byw)
+            w2 = (sc.Q_EL/(2*sc.M_EL))*(Bxw-Byw)
+            alpha1 = w2/w1
+          
+
+            # Loop at line 1897 -- MRES loop
+            # Since we're trying to keep it vectorized:
+            # target dimensions are num(cell rows) rows x num(mres) columns.
+            # (Sometimes Python is beautiful, but now is not one of those times)
+            #  --> Note to future editors: the (vec)[:,np.newaxis] command is similar to repmat or tile:
+            #  It will tile the vector along the new axis, with length dictated by whatever operation 
+            #  follows it. In Python lingo this is "broadcasting"
+
+            # Resonant modes to sum over: Integers, positive and negative
+            mres = np.linspace(-5,5,11)
+            
+            # Parallel resonance velocity V_z^res  (pg 5 of Bortnik et al)
+            t1 = w*w*kz*kz
+            t2 = (mres*mres*wh*wh)[np.newaxis,:]-(w*w)[:,np.newaxis]
+            t3 = (kz*kz)[:,np.newaxis] + ((mres*wh*mres*wh)[np.newaxis,:]/(pow(sc.C*np.cos(alpha_lc),2)))
+            
+            direction = np.outer(np.sign(kz),np.sign(mres))
+            direction[:,mres==0] = -1*np.sign(kz)[:,np.newaxis] # Sign 
+
+            # v_para_res = (ta - tb)
+            v_para_res = ( direction*np.sqrt(abs(t1[:,np.newaxis] + t2*t3)) - (w*kz)[:,np.newaxis] ) / t3;
+
+            # Getting some obnoxious numerical stuff in the case of m=0:
+            v_para_res[:,mres==0] = (w/kz)[:,np.newaxis]
+            v_tot_res = v_para_res / np.cos(alpha_lc)
+
+            E_res = sc.E_EL*(1.0/np.sqrt( 1-(v_tot_res*v_tot_res/(sc.C*sc.C)) ) -1 )
+
+            # Start and end indices in the energy array (+-20% energy band)
+            e_starti = np.floor((np.log10(E_res)-sc.E_EXP_BOT-sc.E_BANDWIDTH)/sc.DE_EXP)
+            e_endi   = np.ceil(( np.log10(E_res)-sc.E_EXP_BOT+sc.E_BANDWIDTH)/sc.DE_EXP)
+
+            # Threshold to range of actual indexes (some energies may be outside our target range)
+            np.clip(e_starti,0,sc.NUM_E, out=e_starti)
+            np.clip(e_endi,  0,sc.NUM_E, out=e_endi)
+
+            #inds = zip(e_starti.ravel(), e_endi.ravel())
+            #print np.shape(inds)
+            #v_tot = direction*v_tot_arr[e_]
+
+            # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
+            # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
+
+    return v_tot_arr
+
+
+
+
+
+
+
+
+def get_flight_time_constant(L, lat, alpha_eq):
+ # * FUNCTION: getFltConst
+ # * ---------------------
+ # * This function calculates the 'flight-time-const' for a particular 
+ # * latitude,  and returns the constant for a particle flying adiabatically
+ # * from that latitude, to the Northern hemisphere, and a similar constant 
+ # * to the Southern hemisphere.  This constant is then multiplied by 
+ # * 1/v_tot for the particular particle, which gives the total flight
+ # * time in seconds to the appropriate hemisphere.
+ # *
+    num_div = 10000   # number of steps for numeric evaluation of integral
+    sin_alpha_eq_sq = pow(np.sin(alpha_eq),2)
+    endx = np.sin(lat*sc.D2R)
+    dx = endx/num_div
+
+    # Evaluate Walt's flight-time constant, from equator to mirror pt.
+    # (Equation 4.28 -- page 44 of Walt's book)
+    walt_tau = (0.02925/sc.R_E)*sc.C*(1 - 0.4635*pow(sin_alpha_eq_sq,0.375))
+    #walt_tau = (0.117/sc.R_E)*sc.C*(1 - 0.4635*pow(np.sin(alpha_eq),0.75))
+
+    # Evaluate flight-time integral from equator to target latitude:
+    # (Equation 4.27 -- page 44 of Walt's book)
+
+    x = 0
+    I = 0
+    for n in xrange(0,num_div):
+        xterm = np.sqrt(1 + 3*x*x)
+        I += dx*xterm / np.sqrt(1 - (sin_alpha_eq_sq/pow(1-x*x,3))*xterm)
+        x += dx
+
+    # Northern flight time is the total flight time minus the offset
+    # Soutehrn is total plus offset
+    flight_time_N = L*sc.R_E*(walt_tau - I)
+    flight_time_S = L*sc.R_E*(walt_tau + I)
+
+    #print flight_time_N/sc.C
+    #print flight_time_S/sc.C
+
+    return flight_time_N, flight_time_S
 
 def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     ''' Finds line segments which cross L_target;
@@ -228,11 +443,18 @@ def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
 
     # # Same format as before (with Cartesian coordinates for the ray segments)
     out_inds = zip(mr,mc)
-    out_cartesian = dict()
+    # print np.shape(out_inds)
+    # print np.shape(x1ray)
+    # print np.shape(mr)
+    #out_cartesian = zip(x1ray[mr], y1ray[mr], x2ray[mr],y2ray[mr])#, zip(x2ray[mr],y2ray[mr])
+    out_cartesian = []
     for o in out_inds:
-        #print o[0]
-        out_cartesian[o[0]] = [(x1ray[o[0]], y1ray[o[0]]),(x2ray[o[0]],y2ray[o[0]])]
+        out_cartesian.append([(x1ray[o[0]], y1ray[o[0]]),(x2ray[o[0]],y2ray[o[0]])])
 
+    # print x1ray[mr]
+    # print x2ray[mr]
+    #out_cartesian = x1ray[mr]
+    
 
     return mr, mc, out_cartesian
 
@@ -321,14 +543,14 @@ def outside_L(BL, BH, TL, TH, L_target):
     #print "lowBound: %g, upBound: %g"%(lowBound, upBound)
 
     # Bitwise operators (&, | vs and, or) yield boolean vectors
-    return ((   (BL.ELE <= lowBound) &  
-                (TL.ELE <= lowBound) &  
-                (BH.ELE <= lowBound) &
-                (TH.ELE <= lowBound) ) |
-            (   (BL.ELE >= upBound)  &
-                (TL.ELE >= upBound)  &
-                (BH.ELE >= upBound)  &
-                (TH.ELE >= upBound)  ))
+    return ((   (BL['l_sh'] <= lowBound) &  
+                (TL['l_sh'] <= lowBound) &  
+                (BH['l_sh'] <= lowBound) &
+                (TH['l_sh'] <= lowBound) ) |
+            (   (BL['l_sh'] >= upBound)  &
+                (TL['l_sh'] >= upBound)  &
+                (BH['l_sh'] >= upBound)  &
+                (TH['l_sh'] >= upBound)  ))
 
 
 
@@ -456,21 +678,35 @@ class ray_interpolator(object):
     def __init__(self, BL, TL, BH, TH, t):
         '''Inputs: bottom low, bottom high, top low, top high interpolating factors'''
         # Interpolate dataframes onto a uniform time grid:
-        self.BL = interp_dataframe(BL, t, 'TG')
-        self.BH = interp_dataframe(BH, t, 'TG')
-        self.TL = interp_dataframe(TL, t, 'TG')
-        self.TH = interp_dataframe(TH, t, 'TG')
+        self.BL = interp_dataframe(BL, t, 'tg')
+        self.BH = interp_dataframe(BH, t, 'tg')
+        self.TL = interp_dataframe(TL, t, 'tg')
+        self.TH = interp_dataframe(TH, t, 'tg')
 
+        # Ray metadata
+        self.BL.frequency = BL.frequency
+        self.BH.frequency = BH.frequency
+        self.TL.frequency = TL.frequency
+        self.TH.frequency = TH.frequency
+
+    def interpolation_weights(self, interp_grid):
+        BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+        TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+        BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+        TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
+        return BL_fact, TL_fact, BH_fact, TH_fact
     def all_vals_at(self, interp_grid, val_name, mask):
         '''Returns interpolated values at each time step, and each factor.
            interp_grid: two-column array -- (t, f) interpolating values, 0 to 1.
            val_name: name of the column to interpolate
            mask: binary mask of time bins to look at '''
         # Interpolating weights:
-        BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-        TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-        BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-        TH_fact = interp_grid[:,0]*interp_grid[:,1]
+        # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+        # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+        # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+        # TH_fact = interp_grid[:,0]*interp_grid[:,1]
+        BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
 
         return (np.outer(self.BL[val_name][mask], BL_fact) + 
                     np.outer(self.BH[val_name][mask], TL_fact) + 
@@ -482,10 +718,12 @@ class ray_interpolator(object):
            BL, TL, BH, TH: Interpolating weights (vectors).
            val_name: name of the column to interpolate
            mask: binary mask of time bins to look at '''
-        BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-        TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-        BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-        TH_fact = interp_grid[:,0]*interp_grid[:,1]
+        # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
+        # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
+        # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
+        # TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
+        BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
 
         return (self.BL[val_name][mask]*BL_fact + 
                 self.BH[val_name][mask]*TL_fact + 
@@ -500,6 +738,12 @@ class ray_interpolator(object):
         for c in cols:
             df[c] = self.vals_at(interp_grid, c, mask)
 
+        BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
+
+        df['frequency'] = (self.BL.frequency*BL_fact + 
+                           self.BH.frequency*TL_fact + 
+                           self.TL.frequency*BH_fact + 
+                           self.TH.frequency*TH_fact)
         return df
 
 if __name__ =='__main__':
