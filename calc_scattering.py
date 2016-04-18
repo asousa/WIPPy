@@ -14,6 +14,8 @@ import sim_consts as sc
 from ionoAbsorp import ionoAbsorp
 import matplotlib.pyplot as plt
 from scipy import interpolate
+from scipy.special import jn      # Bessel function of the 1st kind
+from scipy.special import fresnel # Fresnel integrals
 import itertools
 import time
 
@@ -177,9 +179,9 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
     # Start timer
     tstart = time.time()
-    # Generate energy and velocity arrays
-    E_tot_arr = pow(10,sc.E_EXP_BOT + sc.DE_EXP*np.arange(0,sc.NUM_E))
-    v_tot_arr = sc.C*np.sqrt(1 - pow(sc.E_EL/(sc.E_EL + E_tot_arr),2))
+    # # Generate energy and velocity arrays
+    # E_tot_arr = pow(10,sc.E_EXP_BOT + sc.DE_EXP*np.arange(0,sc.NUM_E))
+    # v_tot_arr = sc.C*np.sqrt(1 - pow(sc.E_EL/(sc.E_EL + E_tot_arr),2))
 
 
     L = L_target
@@ -190,6 +192,11 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
     # Gen EA array (maybe pass this as an arg)
     EA_array = gen_EA_array(L_target)
+
+    # Initialize alpha array
+
+    DA_array_N = np.zeros((sc.NUM_E, sc.NUM_STEPS))
+    DA_array_S = np.zeros((sc.NUM_E, sc.NUM_STEPS))
 
 
     tstop = time.time()
@@ -225,6 +232,12 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
         calph = np.cos(alpha_lc)
 
         ds = L*sc.R_E*slat_term*clat*sc.EAIncr*np.pi
+        # Jacob hates using parentheses, so I'm not sure I did the order of operations right here.
+        # I believe C does multiplication and division with equal priority, evaluated left to right.
+            # dv_para_ds = -0.5*pow(salph,2)/calph/wh*dwh_ds;
+        dv_para_ds = -0.5*(salph*salph/(calph*wh))*dwh_ds
+
+
         # # Sometimes Python is pretty and readable, but now is not one of those times
         # for cell_ind, cells in crossing_df[crossing_df['EA_index'] == EA_ind].iterrows():
         #     print np.shape(cell)
@@ -241,6 +254,8 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
             f = cells.frequency + sc.DF/2.0
             pwr = cells.power/sc.DT       # Jacob divides by num_rays too, but it looks like it's always 1
             psi = cells.psi*sc.D2R       
+
+            #print pwr
 
             # Maybe threshold power here?
 
@@ -272,9 +287,10 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
             rho1=((mu_sq-stixS)*mu_sq*spsi*cpsi)/(stixD*(mu_sq*spsi_sq-stixP))
             rho2 = (mu_sq - stixS) / stixD
 
+            #print num
             Byw_sq = ( (2.0*sc.MU0/sc.C) * (pwr*stixX*stixX*rho2*rho2*mu*abs(cpsi)) /
                      np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
-
+            #print Byw_sq
             # RMS wave components
             Byw = np.sqrt(Byw_sq);
             Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
@@ -333,8 +349,106 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
             # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
             # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
+            #print "e_starti is", np.shape(e_starti)
+            for index, starti in np.ndenumerate(e_starti):
+                endi = e_endi[index]
 
-    return v_tot_arr
+                #print starti, endi
+                # Energies to do
+                #print Ezw.index.values
+                    
+                #print Ezw[index(0)]
+
+                if endi > starti:
+                    # Dimensions of matrices: (num cells) rows x (num energies) columns
+                    #print "Index is", index
+
+                    v_tot = direction[index]*sc.v_tot_arr[starti:endi]
+                    v_para = v_tot*calph
+                    v_perp = abs(v_tot*salph)
+
+                    # Relativistic factor
+                    gamma = 1/np.sqrt(1 - pow(v_tot/sc.C, 2))
+
+                    #alpha2 = sc.Q_EL*Ezw / (sc.M_EL*np.outer(gamma*v_perp, w1))
+#                    alpha2 = (sc.Q_EL/sc.M_EL)*np.outer((Ezw/w1), 1.0/(gamma*v_perp))
+                    
+                    alpha2 = (sc.Q_EL/sc.M_EL)*(Ezw.iloc[index[0]]/w1.iloc[index[0]])/(gamma*v_perp)
+                    
+                    # beta = np.outer(kx/wh,v_perp)                    
+                    beta = (kx.iloc[index[0]]/wh)*v_perp
+                    
+                    mr = mres[index[1]]
+                    # wtau_sq = (pow((-1),(mr-1))*np.outer(w1, 1.0/gamma) *
+                    #                     (jn(mr -1, beta) -
+                    #                      alpha1[:,np.newaxis]*jn(mr + 1, beta) +
+                    #                      gamma[np.newaxis,:]*alpha2*jn(mr, beta)))
+                    wtau_sq = (pow((-1),(mr-1))*(w1.iloc[index[0]]/gamma)*
+                               jn(mr - 1, beta) -
+                               alpha1.iloc[index[0]]*jn(mr + 1, beta) +
+                               gamma*alpha2*jn(mr,beta))
+
+                    #T1 = -wtau_sq*(1 + calph*calph/(mr*Y[:,np.newaxis] - 1))
+                    T1 = -wtau_sq*(1 - calph*calph/(mr*Y.iloc[index[0]] - 1))
+                        
+
+                    # Analytical evaluation! (Line 1938)
+                    if (abs(lat) < 1e-3):
+                        eta_dot = mr*wh/gamma - w.iloc[index[0]] - kz.iloc[index[0]]*v_para
+                        dalpha_eq = abs(T1/eta_dot)*np.sqrt(1 - np.cos(ds*eta_dot/v_para))
+                    else:
+                        v_para_star = v_para - dv_para_ds*ds/2.0
+                        v_para_star_sq = v_para_star*v_para_star
+                        # AA =((mr/(2*v_para_star*gamma))*dwh_ds*(1 + ds/(2.0*v_para_star)*dv_para_ds)
+                        #     ))
+                        #     # *
+                        #     #  (1 + ds/(2.0*v_para_star)*dv_para_ds) -
+                        #     #  (mr/(2.0*v_para_star*gamma))*wh*dv_para_ds +
+                        #     #  (w/(2.0*v_para_star_sq))*dv_para_ds)
+
+                        AA = ((mr/(2.0*v_para_star*gamma))*dwh_ds * 
+                              (1 + ds/(2.0*v_para_star)*dv_para_ds) - 
+                              (mr/(2.0*v_para_star_sq*gamma))*wh*dv_para_ds + 
+                              (w.iloc[index[0]]/(2.0*v_para_star_sq))*dv_para_ds)
+
+                        BB = ((mr/(gamma*v_para_star))*wh - 
+                              (mr/(gamma*v_para_star))*dwh_ds*(ds/2.0) -
+                               w.iloc[index[0]]/v_para_star - kz.iloc[index[0]])
+
+                        Farg = (BB + 2*AA*ds) / np.sqrt(2*np.pi*abs(AA))
+                        Farg0 = BB / np.sqrt(2*np.pi*abs(AA))
+
+                        Fs,  Fc  = fresnel(Farg)
+                        Fs0, Fc0 = fresnel(Farg0)
+
+                        dFs_sq = pow(Fs - Fs0, 2)
+                        dFc_sq = pow(Fc - Fc0, 2)
+
+                        dalpha = np.sqrt( (np.pi/4)*abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
+                        alpha_eq_p = np.arcsin( np.sin(alpha_lc+dalpha)*pow(clat,3) / np.sqrt(slat_term) )
+                        dalpha_eq  = alpha_eq_p - alpha_eq
+                        #print dalpha_eq
+
+
+
+                        #print "t offset:",t.iloc[index[0]]
+                        # Add net change in alpha to total array:
+                        if direction[index] > 0:
+                            #print "Norf!"
+
+                            tt = np.round( (t.iloc[index[0]] + ftc_N/v_para)/sc.T_STEP ).astype(int)
+                            #print tt
+                            # tt.clip(0,sc.NUM_STEPS)
+                            DA_array_N[starti:endi,tt] += dalpha_eq*dalpha_eq
+                        else:
+                            #print "Souf!"
+                            tt = np.round( (t.iloc[index[0]] + ftc_S/v_para)/sc.T_STEP ).astype(int)
+                            #print tt
+                            DA_array_S[starti:endi,tt] += dalpha_eq*dalpha_eq
+    tstop = time.time()
+
+    print "Scattering took %g seconds"%(tstop - tstart)
+    return DA_array_N, DA_array_S
 
 
 
