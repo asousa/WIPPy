@@ -60,9 +60,9 @@ def load_rayfile(directory, frequency):
     ray_dict = {}
     for x in xrange(len(k1)):
         #print int(df.iloc[k1[x]+1].LAT)
-        ray_dict[int(df.iloc[k1[x]].lat)] = df.iloc[k1[x]:k2[x]]
-        ray_dict[int(df.iloc[k1[x]].lat)].launch_lat  = int(df.iloc[k1[x]].lat)
-        ray_dict[int(df.iloc[k1[x]].lat)].frequency  = frequency
+        ray_dict[(df.iloc[k1[x]].lat)] = df.iloc[k1[x]:k2[x]]
+        ray_dict[(df.iloc[k1[x]].lat)].launch_lat  = df.iloc[k1[x]].lat
+        ray_dict[(df.iloc[k1[x]].lat)].frequency  = frequency
         
     #print ray_dict.keys()
     return ray_dict

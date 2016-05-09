@@ -10,10 +10,9 @@ EPS0 = 8.854e-12
 C    = 2.997956376932163e8      # Speed of light
 B0   = 3.12e-5                  # Magnetic field strength (Teslas)
 
-
+# Degrees, radians
 D2R = np.pi/180.0
 R2D = 180.0/np.pi
-
 
 R_E = 6378e3    # Earth radius in meters
 H_IONO = 1e5    # Height of bottom of ionosphere, in meters
@@ -26,38 +25,38 @@ B = 1e5         # Constant for lightning power calculation
 H_E = 5000      # Lightning incident height, in meters? (Confirm this pls)
 
 # Scattering code simulation params:
-T_MAX = 5.0        #30.0
-NUM_STEPS =  100 #30000
+T_MAX = 10 #5.0        #30.0
+NUM_STEPS =  200 #30000
 T_STEP = (1.0*T_MAX)/NUM_STEPS
 
+# Degrees latitude around flash latitude that we'll use rays from:
+LAT_SPREAD = 80
 
 # Number of steps in fine-grid interpolation:
-DIV_LAT_NUM = 6
-DIV_FREQ_NUM = 6
+DIV_LAT_NUM = 11 #6   # 2 does endpoints only
+DIV_FREQ_NUM = 11 #6
 
 # Spacing between final time-frequency grids:
 DT = T_STEP     # No extra interpolation here
-DF = 40         # Hz. REWORK THIS ONCE YOU ADD IN MULTIPLE FREQUENCIES AUSTIN
+DF = 50         # Hz. REWORK THIS ONCE YOU ADD IN MULTIPLE FREQUENCIES AUSTIN
+F_STEP = 1      # Hz. Separation in frequency. (i.e., do 1-hz interpolation)
 
 # EA array grid settings:
 # (EA = "Equal Area" -- defines a set of equal-area latitude slices
 #  to compute scattering at. All values in degrees latitude.)
-EALimS = -30.0  # Southern limit (degrees)
-EALimN = 30.0   # Northern limit (degrees)
+EALimS = -60.0  # Southern limit (degrees)
+EALimN = 60.0   # Northern limit (degrees)
 EAIncr = 1.0    # Step size (degrees)
-
-# DL0: 
-#DL0 = 6e-4    #(in L-shells)
 
 # Size of bounding boxes for crossing detection:
 # (Width around a field line, in L-shells, in which to consider a crossing)
-L_MARGIN = 0.1 #(in L-shells)
+L_MARGIN = 0.1 #6e-4  #0.1 #(in L-shells)
 
 
 # Energy bins for resonant scattering calculation:
 E_MIN = 10e3    # Minimum energy (ev)
 E_MAX = 5e6     # Maximium energy (ev)
-NUM_E = 256     # Number of bins in energy vector
+NUM_E = 128     # Number of bins in energy vector
 
 E_BANDWIDTH = 0.3   # width plus/minus energy resonance to calculate for. Jacob hard-coded to 0.3.
 #SQUARE = True   # 

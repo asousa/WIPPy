@@ -18,7 +18,7 @@ from scipy.special import jn      # Bessel function of the 1st kind
 from scipy.special import fresnel # Fresnel integrals
 import itertools
 import time
-
+from line_intersection import check_intersection
 
 
 def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells, dlat):
@@ -28,16 +28,23 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
     ray_hf = load_rayfile(directory, frequency=upper_freq)
 
     dfreq  = abs(upper_freq - lower_freq)
+    #sc.DF = dfreq/sc.F_STEP
+    #sc.DIV_FREQ_NUM = sc.DF
+    # print "DF is:",sc.DF
 
     assert ray_lf.keys() == ray_hf.keys(), "Key mismatch between ray files"
 
 
-    in_lats = sorted(ray_lf.keys())
+    all_lats = np.array(sorted(ray_lf.keys()))
+    #print all_lats
 
-
+    in_lats = all_lats[(all_lats >= (center_lat - sc.LAT_SPREAD/2.0)) & (all_lats <= (center_lat + sc.LAT_SPREAD/2.0))]
+    #print in_lats
     # Generate fine-scale interpolating factors
     lat_fine_grid = np.linspace(0, 1, sc.DIV_LAT_NUM)
     freq_fine_grid= np.linspace(0, 1, sc.DIV_FREQ_NUM)
+    print "Latitude interpolating steps:  ", lat_fine_grid
+    print "Frequency interpolating steps: ", freq_fine_grid
     interp_grid = []
     for l in lat_fine_grid:
         for f in freq_fine_grid:
@@ -60,7 +67,6 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
 
     # Execution time
     tstart = time.time()
-
 
 
     # Loop over incident ray latitudes:
@@ -129,7 +135,7 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
             #print cross_inds
             
             # unravel the indices in the cross_inds list, to get time and weight indices
-            mask_inds, fine_grid_inds =  np.unravel_index(cross_inds, (sum(mask), fine_grid_size))
+            mask_inds, fine_grid_inds = np.unravel_index(cross_inds, (sum(mask), fine_grid_size))
             #print mask_inds
             #print fine_grid_inds
             # tmp = np.where(mask)[0]
@@ -430,7 +436,6 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                         #print dalpha_eq
 
 
-
                         #print "t offset:",t.iloc[index[0]]
                         # Add net change in alpha to total array:
                         if direction[index] > 0:
@@ -510,39 +515,81 @@ def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     # Generate the equal-area array
     EA_array = gen_EA_array(L_target)
 
-    # print np.shape(l)
-    # print np.shape(l_prev_vec)
-    # print np.shape(lat)
-    # print np.shape(lat_prev_vec)
-    # Step through the l and lat vectors
-
     out_list = dict()
 
 
-    # Vector l, no pre-masking
+    ### --------- Jacob's Version ------
+    # # Vector l, no pre-masking
+    # r1ray = l_prev_vec * pow( np.cos(lat_prev_vec*sc.D2R) , 2 )
+    # x1ray = r1ray * np.cos(lat_prev_vec*sc.D2R)
+    # y1ray = r1ray * np.sin(lat_prev_vec*sc.D2R)
+
+    # # Ugh. I hate that this works -- crossing detection alg uses r1 for x2 and y2. But Jacob's shit seems good.
+    # r2ray = l * pow( np.cos(lat*sc.D2R) , 2 )
+    # x2ray = r1ray * np.cos(lat*sc.D2R)
+    # y2ray = r1ray * np.sin(lat*sc.D2R)
+
+    # Aray = y1ray - y2ray
+    # Bray = x2ray - x1ray
+    # Cray = x1ray*y2ray - y1ray*x2ray
+
+    # val1 = np.outer(Aray,EA_array['x1']) + np.outer(Bray,EA_array['y1']) + Cray[:,np.newaxis]
+    # val2 = np.outer(Aray,EA_array['x2']) + np.outer(Bray,EA_array['y1']) + Cray[:,np.newaxis]
+
+    # val3 = np.outer(x1ray,EA_array['EAa']) + np.outer(y1ray,EA_array['EAb']) + EA_array['EAc'][np.newaxis,:]
+    # val4 = np.outer(x2ray,EA_array['EAa']) + np.outer(y2ray,EA_array['EAb']) + EA_array['EAc'][np.newaxis,:]
+
+    # mask = np.array(val1*val2 <= 0) & (val3*val4 <= 0)
+
+    # ---------- My Version -------------
+    # (Does not check for parallel rays, doesn't watch for divide-by-zero cases... might be problematic?)
+
     r1ray = l_prev_vec * pow( np.cos(lat_prev_vec*sc.D2R) , 2 )
     x1ray = r1ray * np.cos(lat_prev_vec*sc.D2R)
     y1ray = r1ray * np.sin(lat_prev_vec*sc.D2R)
 
     r2ray = l * pow( np.cos(lat*sc.D2R) , 2 )
-    x2ray = r1ray * np.cos(lat*sc.D2R)
-    y2ray = r1ray * np.sin(lat*sc.D2R)
+    x2ray = r2ray * np.cos(lat*sc.D2R)
+    y2ray = r2ray * np.sin(lat*sc.D2R)
 
-    Aray = y1ray - y2ray
-    Bray = x2ray - x1ray
-    Cray = x1ray*y2ray - y1ray*x2ray
+    A1 = y1ray - y2ray
+    B1 = x2ray - x1ray
+    C1 = x1ray*y2ray - x2ray*y1ray
 
-    #print np.shape(Aray), np.shape(Bray), np.shape(Cray)
+    A2  = EA_array['EAa']
+    B2  = EA_array['EAb']
+    C2  = EA_array['EAc']
 
-    #tmp = np.outer(Aray,EA_array['x1'])
-    #print np.shape(tmp)
-    val1 = np.outer(Aray,EA_array['x1']) + np.outer(Bray,EA_array['y1']) + Cray[:,np.newaxis]
-    val2 = np.outer(Aray,EA_array['x2']) + np.outer(Bray,EA_array['y1']) + Cray[:,np.newaxis]
+    x2EA= EA_array['x2']
+    x1EA= EA_array['x1']
 
-    val3 = np.outer(x1ray,EA_array['EAa']) + np.outer(y1ray,EA_array['EAb']) + EA_array['EAc'][np.newaxis,:]
-    val4 = np.outer(x2ray,EA_array['EAa']) + np.outer(y2ray,EA_array['EAb']) + EA_array['EAc'][np.newaxis,:]
+    # Xa is the X-value of intersection point
+    Xa = (np.outer(B1,C2) - np.outer(C1,B2))/(np.outer(A1,B2) - np.outer(B1,A2))
+    #print Xa
 
-    mask = (val1*val2 <= 0) & (val3*val4 <= 0)
+    # Check if within bounds of the segments:
+    Imin = np.zeros_like(Xa)
+    Imax = np.zeros_like(Xa)
+
+    # minimum value: min(max(x2ray, x1ray), max(x2ea, x1ea))
+    Imin = np.maximum(np.minimum(np.tile(x2ray, (len(x2EA),1)).transpose(), np.tile(x1ray, (len(x2EA),1)).transpose()),
+                      np.minimum(np.tile(x2EA,  (len(x2ray),1)),            np.tile(x1EA, (len(x2ray),1))) )
+
+    # maximum value: max(min(x2ray, x1ray), min(x2ea, x1ea))
+    Imax = np.minimum(np.maximum(np.tile(x2ray, (len(x2EA),1)).transpose(), np.tile(x1ray, (len(x2EA),1)).transpose()),
+                      np.maximum(np.tile(x2EA,  (len(x2ray),1)),            np.tile(x1EA, (len(x2ray),1))) )
+    
+    # for ind, ival in np.ndenumerate(Xa):
+    #     ix = ind[0]
+    #     iy = ind[1]
+    #     #print ix, iy
+    #     Imin[ix,iy] = max(min(x2ray[ix],x1ray[ix]),min(x2EA[iy],x1EA[iy]))
+    #     Imax[ix,iy] = min(max(x2ray[ix],x1ray[ix]),max(x2EA[iy],x1EA[iy]))
+
+    mask = (Xa >= Imin) & (Xa <= Imax)
+    # print mask
+    # print np.sum(mask)
+    # print np.shape(mask)
 
     # Rows and columns where mask is true:
     mr, mc = np.where(mask)
@@ -551,100 +598,21 @@ def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     # mc: index in EA array
     #return mr, mc
 
-    #outs = zip(mr,mc)
     # row: index in time series
     # col: index in EA
 
     # # Same format as before (with Cartesian coordinates for the ray segments)
     out_inds = zip(mr,mc)
-    # print np.shape(out_inds)
-    # print np.shape(x1ray)
-    # print np.shape(mr)
-    #out_cartesian = zip(x1ray[mr], y1ray[mr], x2ray[mr],y2ray[mr])#, zip(x2ray[mr],y2ray[mr])
+
+
+    x2ray = r2ray * np.cos(lat*sc.D2R)
+    y2ray = r2ray * np.sin(lat*sc.D2R)
+
     out_cartesian = []
     for o in out_inds:
         out_cartesian.append([(x1ray[o[0]], y1ray[o[0]]),(x2ray[o[0]],y2ray[o[0]])])
 
-    # print x1ray[mr]
-    # print x2ray[mr]
-    #out_cartesian = x1ray[mr]
-    
-
     return mr, mc, out_cartesian
-
-# ------------------------------
-#     Loop version (slower, but easier to read)
-
-
-    # for x in xrange(1, len(l)):
-    #     #print x
-    #     lat_prev = lat_prev_vec[x]
-    #     lat_curr = lat[x]
-    #     l_prev   = l_prev_vec[x]
-    #     l_curr   = l[x]
-
-    #     # # Order the limits (ray could be going either direction):
-    #     # # if (lat_prev < lat_curr):
-    #     # #     lat_low = lat_prev
-    #     # #     lat_high= lat_curr
-    #     # # else:
-    #     # #     lat_low = lat_curr
-    #     # #     lat_high= lat_prev
-    #     # lat_low = min(lat_prev, lat_curr)
-    #     # lat_high= max(lat_prev, lat_curr)
-
-    #     # Find index of any EA segments the ray may have passed through:
-    #     # Get index numbers into the EA array    
-    #     # EA_iLow  = int(np.ceil(  (lat_low  - sc.EALimS) / sc.EAIncr ));
-    #     # EA_iHigh = int(np.floor( (lat_high - sc.EALimS) / sc.EAIncr ));
-
-    #     # if(   ( EA_iLow > EA_iHigh ) |
-    #     #       ( EA_iLow < 0 )        | 
-    #     #       ( EA_iHigh > (sc.EALimN-sc.EALimS)/sc.EAIncr )  ):
-    #     #     pass
-    #     # else:
-    #         # Array of EA index numbers to check for crossings at:
-    #         # EA_i = np.arange(EA_iLow, EA_iHigh + 1)
-
-    #     # I'm just clipping this math straight from Jacob. Yikes!
-
-    #     # Coordinates of the ray segment start and endpoints
-    #     # (radial and Cartesian, in L-shells)
-    #     r1ray = l_prev * pow( np.cos(lat_prev*sc.D2R) , 2 )
-    #     x1ray = r1ray * np.cos(lat_prev*sc.D2R)
-    #     y1ray = r1ray * np.sin(lat_prev*sc.D2R)
-
-    #     r2ray = l_curr * pow( np.cos(lat_curr*sc.D2R) , 2 )
-    #     x2ray = r1ray * np.cos(lat_curr*sc.D2R)
-    #     y2ray = r1ray * np.sin(lat_curr*sc.D2R)
-
-    #     Aray = y1ray - y2ray
-    #     Bray = x2ray - x1ray
-    #     Cray = x1ray*y2ray - y1ray*x2ray
-
-    #     # Formal check for genuine crossings:        
-    #     # val1 = Aray*EA_array.iloc[EA_i]['x1'] + Bray*EA_array.iloc[EA_i]['y1'] + Cray
-    #     # val2 = Aray*EA_array.iloc[EA_i]['x2'] + Bray*EA_array.iloc[EA_i]['y1'] + Cray
-
-    #     # val3 = x1ray*EA_array.iloc[EA_i]['EAa'] + y1ray*EA_array.iloc[EA_i]['EAb'] + EA_array.iloc[EA_i]['EAc']
-    #     # val4 = x2ray*EA_array.iloc[EA_i]['EAa'] + y2ray*EA_array.iloc[EA_i]['EAb'] + EA_array.iloc[EA_i]['EAc']
-
-    #     # Masking out a dataframe with .iloc takes twice as long as just doing all the multiplies!
-    #     val1 = Aray*EA_array['x1'] + Bray*EA_array['y1'] + Cray
-    #     val2 = Aray*EA_array['x2'] + Bray*EA_array['y1'] + Cray
-
-    #     val3 = x1ray*EA_array['EAa'] + y1ray*EA_array['EAb'] + EA_array['EAc']
-    #     val4 = x2ray*EA_array['EAa'] + y2ray*EA_array['EAb'] + EA_array['EAc']
-
-    #     mask = (val1*val2 <= 0) & (val3*val4 <= 0)
-
-    #     #print np.shape(mask)
-
-    #     if any(mask):
-    #         out_list[x] = [(x1ray,y1ray),(x2ray,y2ray)]
-    #         #out_list[x] = np.where(mask)
-
-    # return out_list
 
 
 def outside_L(BL, BH, TL, TH, L_target):
@@ -685,7 +653,7 @@ def interp_dataframe(df, t_new, t_label, cols=None):
         cols = df.columns.values
 
     for c in cols:
-        interpolater = interpolate.interp1d(df[t_label],df[c])
+        interpolater = interpolate.interp1d(df[t_label],df[c],bounds_error=False)
         tmp[c] = interpolater(t_new)
     
     return tmp
@@ -855,9 +823,10 @@ class ray_interpolator(object):
         BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
 
         df['frequency'] = (self.BL.frequency*BL_fact + 
-                           self.BH.frequency*TL_fact + 
-                           self.TL.frequency*BH_fact + 
+                           self.BH.frequency*BH_fact + 
+                           self.TL.frequency*TL_fact + 
                            self.TH.frequency*TH_fact)
+        #print df['frequency']
         return df
 
 if __name__ =='__main__':
