@@ -84,17 +84,17 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         # Find peak power in the simulation -- assume 4kHz, 
         # slightly offset to avoid central null
         MAX_POWER = lightning_power(I0, center_lat, dlat, dfreq, 4000, center_lat, 0.7)
-
+        print "MAX_POWER:", MAX_POWER
         # (initPwr)
-        BL.power = BL.power*lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
-        BH.power = BH.power*lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.launch_lat, 0.7);
-        TL.power = TL.power*lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
-        TH.power = TH.power*lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
+        BL.power *=lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
+        BH.power *=lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.launch_lat, 0.7);
+        TL.power *=lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
+        TH.power *=lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
 
-        BL.scaled = True
-        BH.scaled = True
-        TL.scaled = True
-        TH.scaled = True
+        # BL.scaled = True
+        # BH.scaled = True
+        # TL.scaled = True
+        # TH.scaled = True
 
         # Interpolate onto uniform time grid (first half of doInterp)
         t = np.linspace(0, sc.T_MAX, sc.NUM_STEPS)  # New sampling grid
@@ -163,6 +163,7 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
             df_fine['cross_coords'] = cross_coords  # Cartesian coordinates of start and endpoints (for plotting)
             df_fine['EA_index'] = ea_inds           # Index of which EA array it intercepts
 
+            # df_fine['power']*= 1.0/EA_array[ea_inds].EA_length
 
             #print df_fine
             # print sum(abs(df_fine['ELE'] - l_int[cross_inds]))
@@ -192,7 +193,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
     L = L_target
 
-    epsm = (1/L)*(sc.R_E + sc.H_IONO)/sc.R_E
+    epsm = (1.0/L)*(sc.R_E + sc.H_IONO)/sc.R_E
     alpha_eq = np.arcsin(np.sqrt( pow(epsm, 3)/np.sqrt(1 + 3*(1 - epsm))  ))
 
 
@@ -207,11 +208,15 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
     tstop = time.time()
 
-    #print EA_array
     # Loop through EA segments:
     #for EA_ind, EA_row in EA_array.iterrows():
     for EA_ind in np.unique(crossing_df['EA_index']):   
-        #print EA_ind
+    # For each EA segment, CALCULATE:
+    #     - wh
+    #     - dwh/ds
+    #     - flight-time constant
+    #     - alpha_lc
+
 
         lat = EA_array['lam'][EA_ind]
         print 'EA segment at latitude = ',lat
@@ -220,14 +225,10 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
         clat = np.cos(lat*sc.D2R)
         slat_term = np.sqrt(1 + 3*slat*slat)
 
-        # Magnetic field at current location
-        #B_local = sc.B_eq*slat_term/(pow(clat,6))
-
-
         # Lower hybrid frequency
-        wh = (sc.Q_EL*sc.B0/sc.M_EL)*(1/pow(L,3))*slat_term/pow(clat,6)
+        wh = (sc.Q_EL*sc.B0/sc.M_EL)*(1.0/pow(L,3))*slat_term/pow(clat,6)
         #wh = (2*np.pi*880000) / (pow(L,3)*slat_term/pow(clat,6))       # Jacob used a hard coded value for qB/m
-        dwh_ds = (3*wh/(L*sc.R_E)) *(slat/slat_term) * (1/pow(slat_term,2) + 2/pow(clat,2))
+        dwh_ds = (3.0*wh/(L*sc.R_E)) *(slat/slat_term) * (1.0/(slat_term*slat_term) + 2.0/(clat*clat))
 
         # flight time constants (divide by velocity to get time to ionosphere, in seconds)
         ftc_N, ftc_S = get_flight_time_constant(L, lat, alpha_eq)
@@ -237,10 +238,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
         salph = np.sin(alpha_lc)
         calph = np.cos(alpha_lc)
 
-        ds = L*sc.R_E*slat_term*clat*sc.EAIncr*np.pi
-        # Jacob hates using parentheses, so I'm not sure I did the order of operations right here.
-        # I believe C does multiplication and division with equal priority, evaluated left to right.
-            # dv_para_ds = -0.5*pow(salph,2)/calph/wh*dwh_ds;
+        ds = L*sc.R_E*slat_term*clat*sc.EAIncr*np.pi/180.0
         dv_para_ds = -0.5*(salph*salph/(calph*wh))*dwh_ds
 
 
@@ -250,31 +248,34 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
         # Mask out just the entries which cross the current EA segment:
         cells = crossing_df[crossing_df['EA_index'] == EA_ind]
+        #print cells
+        for ir, c in cells.iterrows():
+            #print c
 
-        if cells.shape[0] > 0:
-            print cells.shape
-            #print cells.columns
 
             # where you left off: time and frequency (line 1800)
-            t = cells.tg + sc.DT/2.0
-            f = cells.frequency + sc.DF/2.0
-            pwr = cells.power/sc.DT       # Jacob divides by num_rays too, but it looks like it's always 1
-            psi = cells.psi*sc.D2R       
+            t = c.tg + sc.DT/2.0
+            f = c.frequency + sc.DF/2.0
+            pwr = c.power/(sc.DT*EA_array['EA_length'][EA_ind])      # Jacob divides by num_rays too, but it looks like it's always 1
+            psi = c.psi*sc.D2R
 
+            print "EA_length: ",EA_array['EA_length'][EA_ind]
+            print "Pwr: ",pwr       
+            print "DT: ",sc.DT
             #print pwr
 
             # Maybe threshold power here?
 
             # Misc. parameters and trig
-            mu = cells.mu
-            stixP = cells.stixP
-            stixR = cells.stixR
-            stixL = cells.stixL
+            mu = c.mu
+            stixP = c.stixP
+            stixR = c.stixR
+            stixL = c.stixL
 
             spsi = np.sin(psi)
             cpsi = np.cos(psi)
-            spsi_sq = pow(spsi,2)
-            cpsi_sq = pow(cpsi,2)
+            spsi_sq = spsi*spsi
+            cpsi_sq = cpsi*cpsi
             n_x  = mu*abs(spsi)
             n_z  = mu*cpsi
             mu_sq = mu*mu
@@ -296,7 +297,9 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
             #print num
             Byw_sq = ( (2.0*sc.MU0/sc.C) * (pwr*stixX*stixX*rho2*rho2*mu*abs(cpsi)) /
                      np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
-            #print Byw_sq
+
+
+            print "Byw_sq: ",Byw_sq
             # RMS wave components
             Byw = np.sqrt(Byw_sq);
             Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
@@ -321,107 +324,94 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
             #  It will tile the vector along the new axis, with length dictated by whatever operation 
             #  follows it. In Python lingo this is "broadcasting"
 
-            # Resonant modes to sum over: Integers, positive and negative
-            mres = np.linspace(-5,5,11)
-            
-            # Parallel resonance velocity V_z^res  (pg 5 of Bortnik et al)
-            t1 = w*w*kz*kz
-            t2 = (mres*mres*wh*wh)[np.newaxis,:]-(w*w)[:,np.newaxis]
-            t3 = (kz*kz)[:,np.newaxis] + ((mres*wh*mres*wh)[np.newaxis,:]/(pow(sc.C*np.cos(alpha_lc),2)))
-            
-            direction = np.outer(np.sign(kz),np.sign(mres))
-            direction[:,mres==0] = -1*np.sign(kz)[:,np.newaxis] # Sign 
+            # Resonant modes to sum over: Integers, positive and negative            
+            for mres in np.linspace(-5,5,11):
 
-            # v_para_res = (ta - tb)
-            v_para_res = ( direction*np.sqrt(abs(t1[:,np.newaxis] + t2*t3)) - (w*kz)[:,np.newaxis] ) / t3;
+                # Parallel resonance velocity V_z^res  (pg 5 of Bortnik et al)
+                t1 = w*w*kz*kz
+                t2 = pow(mres*wh, 2)-(w*w)
+                t3 = kz*kz + pow((mres*wh),2)/(pow(sc.C*np.cos(alpha_lc),2))
+                
 
-            # Getting some obnoxious numerical stuff in the case of m=0:
-            v_para_res[:,mres==0] = (w/kz)[:,np.newaxis]
-            v_tot_res = v_para_res / np.cos(alpha_lc)
+                #print np.diff(t3[0,:])
+                if mres==0:
+                    direction = -1.0*np.sign(kz)
+                else:
+                    direction = np.sign(kz)*np.sign(mres)
 
-            E_res = sc.E_EL*(1.0/np.sqrt( 1-(v_tot_res*v_tot_res/(sc.C*sc.C)) ) -1 )
+                v_para_res = ( direction*np.sqrt(t1 + t2*t3) - w*kz) / t3
 
-            # Start and end indices in the energy array (+-20% energy band)
-            e_starti = np.floor((np.log10(E_res)-sc.E_EXP_BOT-sc.E_BANDWIDTH)/sc.DE_EXP)
-            e_endi   = np.ceil(( np.log10(E_res)-sc.E_EXP_BOT+sc.E_BANDWIDTH)/sc.DE_EXP)
+                # # Getting some obnoxious numerical stuff in the case of m=0:
+                # if mres==0:
+                #     v_para_res = (w/kz)
+                # else: 
+                #     v_tot_res = v_para_res / np.cos(alpha_lc)
 
-            # Threshold to range of actual indexes (some energies may be outside our target range)
-            np.clip(e_starti,0,sc.NUM_E, out=e_starti)
-            np.clip(e_endi,  0,sc.NUM_E, out=e_endi)
+                v_tot_res = v_para_res / np.cos(alpha_lc)
+                E_res = sc.E_EL*(1.0/np.sqrt( 1-(v_tot_res*v_tot_res/(sc.C*sc.C)) ) - 1 )
 
-            #inds = zip(e_starti.ravel(), e_endi.ravel())
-            #print np.shape(inds)
-            #v_tot = direction*v_tot_arr[e_]
+                # Start and end indices in the energy array (+-20% energy band)
+                e_starti = np.floor((np.log10(E_res)-sc.E_EXP_BOT-sc.E_BANDWIDTH)/sc.DE_EXP)
+                e_endi   = np.ceil(( np.log10(E_res)-sc.E_EXP_BOT+sc.E_BANDWIDTH)/sc.DE_EXP)
 
-            # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
-            # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
-            #print "e_starti is", np.shape(e_starti)
-            for index, starti in np.ndenumerate(e_starti):
-                endi = e_endi[index]
 
-                #print starti, endi
-                # Energies to do
-                #print Ezw.index.values
-                    
-                #print Ezw[index(0)]
+                # Threshold to range of actual indexes (some energies may be outside our target range)
+                e_starti = np.clip(e_starti,0,sc.NUM_E)
+                e_endi   = np.clip(e_endi,  0,sc.NUM_E)
 
-                if endi > starti:
-                    # Dimensions of matrices: (num cells) rows x (num energies) columns
-                    #print "Index is", index
+               
 
-                    v_tot = direction[index]*sc.v_tot_arr[starti:endi]
+                # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
+                # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
+                #print "e_starti is", np.shape(e_starti)
+                for e_toti in np.arange(e_starti,e_endi):
+
+
+                    v_tot = direction*sc.v_tot_arr[e_toti]
                     v_para = v_tot*calph
                     v_perp = abs(v_tot*salph)
 
                     # Relativistic factor
-                    gamma = 1/np.sqrt(1 - pow(v_tot/sc.C, 2))
+                    gamma = 1.0/np.sqrt(1.0 - pow(v_tot/sc.C, 2))
 
-                    #alpha2 = sc.Q_EL*Ezw / (sc.M_EL*np.outer(gamma*v_perp, w1))
-#                    alpha2 = (sc.Q_EL/sc.M_EL)*np.outer((Ezw/w1), 1.0/(gamma*v_perp))
-                    
-                    alpha2 = (sc.Q_EL/sc.M_EL)*(Ezw.iloc[index[0]]/w1.iloc[index[0]])/(gamma*v_perp)
-                    
-                    # beta = np.outer(kx/wh,v_perp)                    
-                    beta = (kx.iloc[index[0]]/wh)*v_perp
-                    
-                    mr = mres[index[1]]
-                    # wtau_sq = (pow((-1),(mr-1))*np.outer(w1, 1.0/gamma) *
-                    #                     (jn(mr -1, beta) -
-                    #                      alpha1[:,np.newaxis]*jn(mr + 1, beta) +
-                    #                      gamma[np.newaxis,:]*alpha2*jn(mr, beta)))
-                    wtau_sq = (pow((-1),(mr-1))*(w1.iloc[index[0]]/gamma)*
-                               jn(mr - 1, beta) -
-                               alpha1.iloc[index[0]]*jn(mr + 1, beta) +
-                               gamma*alpha2*jn(mr,beta))
+                    alpha2 = sc.Q_EL*Ezw /(sc.M_EL*gamma*w1*v_perp)
+                    #alpha2 = (sc.Q_EL/sc.M_EL)*(Ezw/w1)/(gamma*v_perp)
 
-                    #T1 = -wtau_sq*(1 + calph*calph/(mr*Y[:,np.newaxis] - 1))
-                    T1 = -wtau_sq*(1 - calph*calph/(mr*Y.iloc[index[0]] - 1))
-                        
+                    beta = kx*v_perp/wh
+
+                    #mr = mres[index[1]]
+                  
+                    wtau_sq = (pow((-1),(mres-1)) * w1/gamma * 
+                                ( jn( (mres-1), beta ) - 
+                                  alpha1*jn( (mres+1) , beta ) +
+                                  gamma*alpha2*jn( mres , beta ) ))
+
+                    T1 = -wtau_sq*(1 + calph*calph/(mres*Y - 1))
 
                     # Analytical evaluation! (Line 1938)
-                    if (abs(lat) < 1e-3):
-                        eta_dot = mr*wh/gamma - w.iloc[index[0]] - kz.iloc[index[0]]*v_para
-                        dalpha_eq = abs(T1/eta_dot)*np.sqrt(1 - np.cos(ds*eta_dot/v_para))
+                    if (abs(lat) < 1e-3):        
+    
+                        eta_dot = mres*wh/gamma - w - kz*v_para;
+    
+                        if(fabs(eta_dot)<10):
+                            dalpha_eq = fabs(T1/v_para)*ds/sqrt(2); 
+                        else:
+                            dalpha_eq = fabs(T1/eta_dot)*sqrt(1-cos(ds*eta_dot/v_para))
+    
                     else:
                         v_para_star = v_para - dv_para_ds*ds/2.0
                         v_para_star_sq = v_para_star*v_para_star
-                        # AA =((mr/(2*v_para_star*gamma))*dwh_ds*(1 + ds/(2.0*v_para_star)*dv_para_ds)
-                        #     ))
-                        #     # *
-                        #     #  (1 + ds/(2.0*v_para_star)*dv_para_ds) -
-                        #     #  (mr/(2.0*v_para_star*gamma))*wh*dv_para_ds +
-                        #     #  (w/(2.0*v_para_star_sq))*dv_para_ds)
 
-                        AA = ((mr/(2.0*v_para_star*gamma))*dwh_ds * 
+                        AA =( (mres/(2.0*v_para_star*gamma))*dwh_ds* 
                               (1 + ds/(2.0*v_para_star)*dv_para_ds) - 
-                              (mr/(2.0*v_para_star_sq*gamma))*wh*dv_para_ds + 
-                              (w.iloc[index[0]]/(2.0*v_para_star_sq))*dv_para_ds)
+                               mres/(2.0*v_para_star_sq*gamma)*wh*dv_para_ds + 
+                               w/(2.0*v_para_star_sq)*dv_para_ds )
 
-                        BB = ((mr/(gamma*v_para_star))*wh - 
-                              (mr/(gamma*v_para_star))*dwh_ds*(ds/2.0) -
-                               w.iloc[index[0]]/v_para_star - kz.iloc[index[0]])
+                        BB =( mres/(gamma*v_para_star)*wh - 
+                              mres/(gamma*v_para_star)*dwh_ds*(ds/2.0) -
+                              w/v_para_star - kz )
 
-                        Farg = (BB + 2*AA*ds) / np.sqrt(2*np.pi*abs(AA))
+                        Farg = (BB + 2.0*AA*ds) / np.sqrt(2.0*np.pi*abs(AA))
                         Farg0 = BB / np.sqrt(2*np.pi*abs(AA))
 
                         Fs,  Fc  = fresnel(Farg)
@@ -430,26 +420,251 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                         dFs_sq = pow(Fs - Fs0, 2)
                         dFc_sq = pow(Fc - Fc0, 2)
 
-                        dalpha = np.sqrt( (np.pi/4)*abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
+                        dalpha = np.sqrt( (np.pi/4.0)/abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
                         alpha_eq_p = np.arcsin( np.sin(alpha_lc+dalpha)*pow(clat,3) / np.sqrt(slat_term) )
                         dalpha_eq  = alpha_eq_p - alpha_eq
-                        #print dalpha_eq
-
+                        #print "dalpha_eq:", dalpha_eq
+                        #print "output vec shape:", np.shape(dalpha_eq)
+                        #print "end - start:", endi - starti
 
                         #print "t offset:",t.iloc[index[0]]
                         # Add net change in alpha to total array:
-                        if direction[index] > 0:
+                        if direction > 0: 
                             #print "Norf!"
 
-                            tt = np.round( (t.iloc[index[0]] + ftc_N/v_para)/sc.T_STEP ).astype(int)
+                            tt = np.round( (t + ftc_N/v_para)/sc.T_STEP ).astype(int)
                             #print tt
-                            # tt.clip(0,sc.NUM_STEPS)
-                            DA_array_N[starti:endi,tt] += dalpha_eq*dalpha_eq
+                            tt = np.clip(tt,0,sc.NUM_STEPS - 1)
+                            #tt.clip(0,sc.NUM_STEPS)
+                            DA_array_N[e_toti,tt] += dalpha_eq*dalpha_eq
                         else:
-                            #print "Souf!"
-                            tt = np.round( (t.iloc[index[0]] + ftc_S/v_para)/sc.T_STEP ).astype(int)
+                            #print "Souf!" 
+                            tt = np.round( (t + ftc_S/v_para)/sc.T_STEP ).astype(int)
+                            tt = np.clip(tt,0,sc.NUM_STEPS - 1)
                             #print tt
-                            DA_array_S[starti:endi,tt] += dalpha_eq*dalpha_eq
+                            DA_array_S[e_toti,tt] += dalpha_eq*dalpha_eq
+
+
+
+
+
+
+        # --------------------- Vector-ish version that isn't working ---------------
+        # if cells.shape[0] > 0:
+        #     print cells.shape
+        #     #print cells.columns
+
+        #     # where you left off: time and frequency (line 1800)
+        #     t = cells.tg + sc.DT/2.0
+        #     f = cells.frequency + sc.DF/2.0
+        #     pwr = cells.power/sc.DT       # Jacob divides by num_rays too, but it looks like it's always 1
+        #     psi = cells.psi*sc.D2R       
+
+        #     #print pwr
+
+        #     # Maybe threshold power here?
+
+        #     # Misc. parameters and trig
+        #     mu = cells.mu
+        #     stixP = cells.stixP
+        #     stixR = cells.stixR
+        #     stixL = cells.stixL
+
+        #     spsi = np.sin(psi)
+        #     cpsi = np.cos(psi)
+        #     spsi_sq = spsi*spsi
+        #     cpsi_sq = cpsi*cpsi
+        #     n_x  = mu*abs(spsi)
+        #     n_z  = mu*cpsi
+        #     mu_sq = mu*mu
+        #     w = 2.0 * np.pi * f
+        #     k = w*mu/sc.C
+        #     kx = w*n_x/sc.C
+        #     kz = w*n_z/sc.C
+        #     Y = wh / w
+
+        #     stixS = (stixR + stixL)/2.0
+        #     stixD = (stixR - stixL)/2.0
+        #     stixA = stixS + (stixP-stixS)*cpsi_sq
+        #     stixB = stixP*stixS + stixR*stixL + (stixP*stixS - stixR*stixL)*cpsi_sq
+        #     stixX = stixP/(stixP - mu_sq*spsi_sq)
+          
+        #     rho1=((mu_sq-stixS)*mu_sq*spsi*cpsi)/(stixD*(mu_sq*spsi_sq-stixP))
+        #     rho2 = (mu_sq - stixS) / stixD
+
+        #     #print num
+        #     Byw_sq = ( (2.0*sc.MU0/sc.C) * (pwr*stixX*stixX*rho2*rho2*mu*abs(cpsi)) /
+        #              np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
+        #     #print Byw_sq
+        #     # RMS wave components
+        #     Byw = np.sqrt(Byw_sq);
+        #     Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
+        #     Eyw = abs(Exw * stixD/(stixS-mu_sq))
+        #     Ezw = abs(Exw *n_x*n_z / (n_x*n_x - stixP))
+        #     Bxw = abs((Exw *stixD*n_z/sc.C)/ (stixS - mu_sq))
+        #     Bzw = abs((Exw *stixD *n_x) /(sc.C*(stixX - mu_sq)));
+
+        #     # Oblique integration quantities
+        #     R1 = (Exw + Eyw)/(Bxw+Byw)
+        #     R2 = (Exw - Eyw)/(Bxw-Byw)
+        #     w1 = (sc.Q_EL/(2*sc.M_EL))*(Bxw+Byw)
+        #     w2 = (sc.Q_EL/(2*sc.M_EL))*(Bxw-Byw)
+        #     alpha1 = w2/w1
+          
+
+        #     # Loop at line 1897 -- MRES loop
+        #     # Since we're trying to keep it vectorized:
+        #     # target dimensions are num(cell rows) rows x num(mres) columns.
+        #     # (Sometimes Python is beautiful, but now is not one of those times)
+        #     #  --> Note to future editors: the (vec)[:,np.newaxis] command is similar to repmat or tile:
+        #     #  It will tile the vector along the new axis, with length dictated by whatever operation 
+        #     #  follows it. In Python lingo this is "broadcasting"
+
+        #     # Resonant modes to sum over: Integers, positive and negative
+        #     mres = np.linspace(-5,5,11)
+            
+        #     # Parallel resonance velocity V_z^res  (pg 5 of Bortnik et al)
+        #     t1 = w*w*kz*kz
+        #     t2 = (mres*mres*wh*wh)[np.newaxis,:]-(w*w)[:,np.newaxis]
+        #     t3 = (kz*kz)[:,np.newaxis] + ((mres*wh*mres*wh)[np.newaxis,:]/(pow(sc.C*np.cos(alpha_lc),2)))
+            
+
+        #     #print np.diff(t3[0,:])
+        #     direction = np.outer(np.sign(kz),np.sign(mres))
+        #     direction[:,mres==0] = -1*np.sign(kz)[:,np.newaxis] # Sign 
+
+        #     # v_para_res = (ta - tb)
+        #     v_para_res = ( direction*np.sqrt(abs(t1[:,np.newaxis] + t2*t3)) - (w*kz)[:,np.newaxis] ) / t3
+
+        #     # Getting some obnoxious numerical stuff in the case of m=0:
+        #     v_para_res[:,mres==0] = (w/kz)[:,np.newaxis]
+        #     v_tot_res = v_para_res / np.cos(alpha_lc)
+
+        #     E_res = sc.E_EL*(1.0/np.sqrt( 1-(v_tot_res*v_tot_res/(sc.C*sc.C)) ) - 1 )
+
+        #     # Start and end indices in the energy array (+-20% energy band)
+        #     e_starti = np.floor((np.log10(E_res)-sc.E_EXP_BOT-sc.E_BANDWIDTH)/sc.DE_EXP)
+        #     e_endi   = np.ceil(( np.log10(E_res)-sc.E_EXP_BOT+sc.E_BANDWIDTH)/sc.DE_EXP)
+
+
+        #     # Threshold to range of actual indexes (some energies may be outside our target range)
+        #     np.clip(e_starti,0,sc.NUM_E, out=e_starti)
+        #     np.clip(e_endi,  0,sc.NUM_E, out=e_endi)
+
+        #     #print "Start index:",e_starti
+        #     #print "Stop index: ",e_endi
+
+
+        #     #inds = zip(e_starti.ravel(), e_endi.ravel())
+        #     #print np.shape(inds)
+        #     #v_tot = direction*v_tot_arr[e_]
+
+
+        #     # emask = np.zeros((len(cells), len(mres), sc.NUM_E),dtype=bool)
+
+
+
+        #     # for index, starti in np.ndenumerate(e_starti):
+        #     #     emask[index[0], index[1],e_starti[index]:e_endi[index]] = True
+
+        #     # print "total emask: ",np.sum(emask)
+
+        #     # emask[:,:,e_starti:e_endi] = True
+        #     #print "emask is: ", np.shape(emask)
+
+        #     # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
+        #     # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
+        #     #print "e_starti is", np.shape(e_starti)
+        #     for index, starti in np.ndenumerate(e_starti):
+        #         endi = e_endi[index]
+
+        #         #print starti, endi
+        #         # Energies to do
+        #         #print Ezw.index.values
+                    
+        #         #print Ezw[index(0)]
+
+        #         if endi >= starti:
+        #             # Dimensions of matrices: (num cells) rows x (num energies) columns
+        #             #print "Index is", index
+
+        #             v_tot = direction[index]*sc.v_tot_arr[starti:endi]
+        #             v_para = v_tot*calph
+        #             v_perp = abs(v_tot*salph)
+
+        #             # Relativistic factor
+        #             gamma = 1.0/np.sqrt(1.0 - pow(v_tot/sc.C, 2))
+
+        #             alpha2 = (sc.Q_EL/sc.M_EL)*(Ezw.iloc[index[0]]/w1.iloc[index[0]])/(gamma*v_perp)
+                    
+        #             #print "gamma:", gamma
+        #             #print "alpha2:",alpha2
+        #             # beta = np.outer(kx/wh,v_perp)
+        #             beta = (kx.iloc[index[0]]/wh)*v_perp
+        #             #print "beta:", beta
+
+        #             mr = mres[index[1]]
+        #             # wtau_sq = (pow((-1),(mr-1))*np.outer(w1, 1.0/gamma) *
+        #             #                     (jn(mr -1, beta) -
+        #             #                      alpha1[:,np.newaxis]*jn(mr + 1, beta) +
+        #             #                      gamma[np.newaxis,:]*alpha2*jn(mr, beta)))
+        #             wtau_sq = (pow((-1),(mr-1))*(w1.iloc[index[0]]/gamma)*
+        #                        jn(mr - 1, beta) -
+        #                        alpha1.iloc[index[0]]*jn(mr + 1, beta) +
+        #                        gamma*alpha2*jn(mr,beta))
+
+        #             #T1 = -wtau_sq*(1 + calph*calph/(mr*Y[:,np.newaxis] - 1))
+        #             T1 = -wtau_sq*(1 + calph*calph/(mr*Y.iloc[index[0]] - 1))
+
+        #             # Analytical evaluation! (Line 1938)
+        #             if (abs(lat) < 1e-3):
+        #                 eta_dot = mr*wh/gamma - w.iloc[index[0]] - kz.iloc[index[0]]*v_para
+        #                 dalpha_eq = abs(T1/eta_dot)*np.sqrt(1 - np.cos(ds*eta_dot/v_para))
+        #             else:
+        #                 v_para_star = v_para - dv_para_ds*ds/2.0
+        #                 v_para_star_sq = v_para_star*v_para_star
+
+        #                 AA = ((mr/(2.0*v_para_star*gamma))*dwh_ds * 
+        #                       (1 + ds/(2.0*v_para_star)*dv_para_ds) - 
+        #                       (mr/(2.0*v_para_star_sq*gamma))*wh*dv_para_ds + 
+        #                       (w.iloc[index[0]]/(2.0*v_para_star_sq))*dv_para_ds)
+
+        #                 BB = ((mr/(gamma*v_para_star))*wh - 
+        #                       (mr/(gamma*v_para_star))*dwh_ds*(ds/2.0) -
+        #                        w.iloc[index[0]]/v_para_star - kz.iloc[index[0]])
+
+        #                 Farg = (BB + 2.0*AA*ds) / np.sqrt(2.0*np.pi*abs(AA))
+        #                 Farg0 = BB / np.sqrt(2*np.pi*abs(AA))
+
+        #                 Fs,  Fc  = fresnel(Farg)
+        #                 Fs0, Fc0 = fresnel(Farg0)
+
+        #                 dFs_sq = pow(Fs - Fs0, 2)
+        #                 dFc_sq = pow(Fc - Fc0, 2)
+
+        #                 dalpha = np.sqrt( (np.pi/4.0)*abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
+        #                 alpha_eq_p = np.arcsin( np.sin(alpha_lc+dalpha)*pow(clat,3) / np.sqrt(slat_term) )
+        #                 dalpha_eq  = alpha_eq_p - alpha_eq
+        #                 #print dalpha_eq
+        #                 #print "output vec shape:", np.shape(dalpha_eq)
+        #                 #print "end - start:", endi - starti
+
+        #                 #print "t offset:",t.iloc[index[0]]
+        #                 # Add net change in alpha to total array:
+        #                 if direction[index] > 0:
+        #                     #print "Norf!"
+
+        #                     tt = np.round( (t.iloc[index[0]] + ftc_N/v_para)/sc.T_STEP ).astype(int)
+        #                     #print tt
+        #                     np.clip(tt,0,sc.NUM_STEPS - 1, out=tt)
+        #                     #tt.clip(0,sc.NUM_STEPS)
+        #                     DA_array_N[starti:endi,tt] += dalpha_eq*dalpha_eq
+        #                 else:
+        #                     #print "Souf!"
+        #                     tt = np.round( (t.iloc[index[0]] + ftc_S/v_para)/sc.T_STEP ).astype(int)
+        #                     np.clip(tt,0,sc.NUM_STEPS - 1, out=tt)
+        #                     #print tt
+        #                     DA_array_S[starti:endi,tt] += dalpha_eq*dalpha_eq
     tstop = time.time()
 
     print "Scattering took %g seconds"%(tstop - tstart)
@@ -571,11 +786,11 @@ def check_crossings(l, lat, l_prev_vec, lat_prev_vec, L_target):
     Imin = np.zeros_like(Xa)
     Imax = np.zeros_like(Xa)
 
-    # minimum value: min(max(x2ray, x1ray), max(x2ea, x1ea))
+    # minimum value: max(min(x2ray, x1ray), min(x2ea, x1ea))
     Imin = np.maximum(np.minimum(np.tile(x2ray, (len(x2EA),1)).transpose(), np.tile(x1ray, (len(x2EA),1)).transpose()),
                       np.minimum(np.tile(x2EA,  (len(x2ray),1)),            np.tile(x1EA, (len(x2ray),1))) )
 
-    # maximum value: max(min(x2ray, x1ray), min(x2ea, x1ea))
+    # maximum value: min(max(x2ray, x1ray), max(x2ea, x1ea))
     Imax = np.minimum(np.maximum(np.tile(x2ray, (len(x2EA),1)).transpose(), np.tile(x1ray, (len(x2EA),1)).transpose()),
                       np.maximum(np.tile(x2EA,  (len(x2ray),1)),            np.tile(x1EA, (len(x2ray),1))) )
     
@@ -674,8 +889,8 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long =
     '''
 
     # Latitude distance, longitude distance between source and ray
-    dist_lat = (sc.R_E + sc.H_IONO/2)*abs(center_lat - ray_lat)*sc.D2R    
-    dist_long= (sc.R_E + sc.H_IONO/2)*abs(dist_long)*sc.D2R
+    dist_lat = (sc.R_E + sc.H_IONO/2.0)*abs(center_lat - ray_lat)*sc.D2R    
+    dist_long= (sc.R_E + sc.H_IONO/2.0)*abs(dist_long)*sc.D2R
     #print "dist_lat: ",dist_lat,"dist_long: ",dist_long
 
     dist_iono = np.hypot(dist_lat, dist_long)
@@ -685,18 +900,21 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long =
     #print "xi: ",xi
     # Power at sub-ionosphere point
     w = 2*np.pi*frequency
-    w_squared = pow(w, 2)
+    w_sq = pow(w, 2)
 
-    S = 1.0/(sc.Z0) * pow( sc.H_E * I0 * (2e-7)*(np.sin(xi)/dist_tot)* w * (sc.A - sc.B),2)/( (w_squared + pow(sc.A, 2))*(w_squared + pow(sc.B,2)))
-
-    S_vert = S * np.cos(xi)   # Vertical component
-
+    S = ( 1.0/(sc.Z0) * pow( sc.H_E * I0 * (2e-7)*(np.sin(xi)/dist_tot)* w * (sc.A - sc.B),2)
+        /( (w_sq + pow(sc.A, 2))*(w_sq + pow(sc.B,2)))  )
 
     # Get ionosphere attenuation:
     atten_factor = pow(10, -ionoAbsorp(ray_lat, frequency)/10.0)
 
+    S_vert = S * np.cos(xi)*atten_factor   # Vertical component
+
+    print "S_vert:", S_vert
+
+
     # I don't know where Jacob got this attenuation factor from. Geometric spreading? Hmm.
-    return S_vert * atten_factor * dlat * sc.D2R * (sc.R_E + sc.H_IONO) * dfreq * 0.87788331
+    return S_vert * dlat * sc.D2R * (sc.R_E + sc.H_IONO) * dfreq * 0.87788331
 
 
 
@@ -747,11 +965,13 @@ def gen_EA_array(L):
     d['EAa'] = y1 - y2
     d['EAb'] = x2 - x1
     d['EAc'] = x1*y2 - y1*x2
-    d['EA_length'] = np.sqrt(pow(x1-x2,2)+pow(y1-y2,2))*sc.R_E
+    d['EA_length'] = np.sqrt((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2))*sc.R_E
     d['x1'] = x1
     d['x2'] = x2
     d['y1'] = y1
     d['y2'] = y2
+
+    # print "EA_length:", d['EA_length']
 
     return d
 
