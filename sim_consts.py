@@ -50,7 +50,7 @@ EAIncr = 1.0    # Step size (degrees)
 
 # Size of bounding boxes for crossing detection:
 # (Width around a field line, in L-shells, in which to consider a crossing)
-L_MARGIN = 0.5 #6e-4  #0.1 #(in L-shells)
+L_MARGIN = 0.11 #6e-4  #0.1 #(in L-shells)
 
 
 # Energy bins for resonant scattering calculation:

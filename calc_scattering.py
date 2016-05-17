@@ -364,6 +364,8 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                 # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
                 # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
                 #print "e_starti is", np.shape(e_starti)
+                # evec_inds = np.aragne(e_starti,e_endi)
+                
                 for e_toti in np.arange(e_starti,e_endi):
 
 
@@ -938,14 +940,14 @@ def gen_EA_array(L):
     slam = np.sin(lam_vec*sc.D2R)
     clam2= pow(clam,2)
     slam2= pow(slam,2)
-    rootTerm = np.sqrt(1 + 3*slam2)
+    rootTerm = np.sqrt(1 + 3.0*slam2)
 
     # dl_lam: still not sure where he gets this expression from
 #    dl_lam = (clam2*clam / rootTerm)*sc.DL0
     dl_lam = (clam2*clam / rootTerm)*sc.L_MARGIN
 
-    x_unit_vect = (3*clam2 - 2) / rootTerm
-    y_unit_vect = (3*slam*clam) / rootTerm
+    x_unit_vect = (3.0*clam2 - 2) / rootTerm
+    y_unit_vect = (3.0*slam*clam) / rootTerm
 
 
     ptR = L*clam2       # Distance to field line (dipole model: r ~ L cos(latitude)^2 )
