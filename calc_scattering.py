@@ -21,47 +21,25 @@ import time
 from line_intersection import check_intersection
 
 
-def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells, dlat):
+# def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells, dlat):
+def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells):
+
     ''' The main event! '''
     # Load rayfiles:
     ray_lf = load_rayfile(directory, frequency=lower_freq)
     ray_hf = load_rayfile(directory, frequency=upper_freq)
 
-    dfreq  = abs(upper_freq - lower_freq)
-    #sc.DF = dfreq/sc.F_STEP
-    #sc.DIV_FREQ_NUM = sc.DF
-    # print "DF is:",sc.DF
+    # dfreq  = abs(upper_freq - lower_freq)
+    # sc.DIV_FREQ_NUM = np.ceil(sc.DF/sc.F_STEP + 1)
+    # print "DIV_FREQ_NUM:", sc.DIV_FREQ_NUM
 
     assert ray_lf.keys() == ray_hf.keys(), "Key mismatch between ray files"
 
 
     all_lats = np.array(sorted(ray_lf.keys()))
-    #print all_lats
 
     in_lats = all_lats[(all_lats >= (center_lat - sc.LAT_SPREAD/2.0)) & (all_lats <= (center_lat + sc.LAT_SPREAD/2.0))]
-    #print in_lats
-    # Generate fine-scale interpolating factors
-    lat_fine_grid = np.linspace(0, 1, sc.DIV_LAT_NUM)
-    freq_fine_grid= np.linspace(0, 1, sc.DIV_FREQ_NUM)
-    print "Latitude interpolating steps:  ", lat_fine_grid
-    print "Frequency interpolating steps: ", freq_fine_grid
-    interp_grid = []
-    for l in lat_fine_grid:
-        for f in freq_fine_grid:
-            interp_grid.append([l, f])
-    
-    interp_grid = np.array(interp_grid)
-    # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-    # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-    # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-    # TH_fact = interp_grid[:,0]*interp_grid[:,1]
 
-    fine_grid_size = sc.DIV_LAT_NUM*sc.DIV_FREQ_NUM
-
-    
-    #print BL_fact
-    #print interp_grid
-    
     # A dataframe of interpolated ray parameters for every EA crossing
     out_data = pd.DataFrame()
 
@@ -81,9 +59,31 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         TH = ray_hf[in_lats[x+1]] # top lat, high frequency
 
 
+        # generate interpolating grid (factors may be different depending on rays loaded)
+        dlat = in_lats[x+1] - in_lats[x]
+        dfreq  = abs(upper_freq - lower_freq)
+
+        DIV_LAT_NUM = np.ceil(dlat/sc.LAT_STEP + 1)
+        DIV_FREQ_NUM = np.ceil(dfreq/sc.F_STEP + 1)
+        print "DIV_LAT_NUM:", DIV_LAT_NUM
+        print "DIV_FREQ_NUM:", DIV_FREQ_NUM
+
+        lat_fine_grid = np.linspace(0, 1, DIV_LAT_NUM)
+        freq_fine_grid= np.linspace(0, 1, DIV_FREQ_NUM)
+
+        print "Latitude interpolating steps:  ", lat_fine_grid
+        print "Frequency interpolating steps: ", freq_fine_grid
+
+        interp_grid = np.array([(l,f) for l in lat_fine_grid for f in freq_fine_grid])
+        fine_grid_size = DIV_LAT_NUM*DIV_FREQ_NUM
+
+
         # Find peak power in the simulation -- assume 4kHz, 
         # slightly offset to avoid central null
         MAX_POWER = lightning_power(I0, center_lat, dlat, dfreq, 4000, center_lat, 0.7)
+        print "center_lat: ",center_lat
+        print "dlat:", dlat
+        print "dfreq:", dfreq
         print "MAX_POWER:", MAX_POWER
         # (initPwr)
         BL.power *=lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
@@ -91,13 +91,9 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
         TL.power *=lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
         TH.power *=lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
 
-        # BL.scaled = True
-        # BH.scaled = True
-        # TL.scaled = True
-        # TH.scaled = True
-
         # Interpolate onto uniform time grid (first half of doInterp)
-        t = np.linspace(0, sc.T_MAX, sc.NUM_STEPS)  # New sampling grid
+        t = np.linspace(sc.T_STEP, sc.T_MAX, sc.NUM_STEPS)  # New sampling grid
+        # print "T-grid:", t
         
         #BL_unif = interp_dataframe(BL, t, 'TG',['LAT','power','ELE'])
 
@@ -132,52 +128,25 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells,
             #     overlap with any of the simulation EA segments.
             
             cross_inds, ea_inds, cross_coords = check_crossings(l_int, lat_int, l_int_prev, lat_int_prev, L_shells)
-            #print cross_inds
             
             # unravel the indices in the cross_inds list, to get time and weight indices
             mask_inds, fine_grid_inds = np.unravel_index(cross_inds, (sum(mask), fine_grid_size))
-            #print mask_inds
-            #print fine_grid_inds
-            # tmp = np.where(mask)[0]
-            
-            # print tmp
-            # print tmp[mask_inds]
 
             # Time indexes in full ray -- index of confirmed crossings in the masked-off array
             time_inds = np.where(mask)[0][mask_inds]
-            
-            #print BL_fact[fine_grid_inds], TL_fact[fine_grid_inds], BH_fact[fine_grid_inds], TH_fact[fine_grid_inds]
-            #print R.BL[time_inds]
-            #print sum(R.BL['ELE'][mask] - R.BL[mask]['ELE'])
-            #print max(time_inds), min(time_inds)
-            # To confirm: Let's interpolate again and make sure we've got the right values for l and lat:
-            #lcheck   = R.vals_at(interp_grid[fine_grid_inds,:],'ELE',mask=time_inds)
-            #latcheck = R.vals_at(interp_grid[fine_grid_inds,:],'LAT',mask=time_inds)
 
-            #print lat_int[cross_inds]
-            #print latcheck
-            # print lcheck
-            # print latcheck
-
-            df_fine = R.dataframe_at(interp_grid[fine_grid_inds,:],time_inds)
+            # Interpolate everything else
+            df_fine = R.dataframe_at(interp_grid=interp_grid[fine_grid_inds,:], mask=time_inds)
             df_fine['cross_coords'] = cross_coords  # Cartesian coordinates of start and endpoints (for plotting)
             df_fine['EA_index'] = ea_inds           # Index of which EA array it intercepts
 
-            # df_fine['power']*= 1.0/EA_array[ea_inds].EA_length
 
-            #print df_fine
-            # print sum(abs(df_fine['ELE'] - l_int[cross_inds]))
-            # print sum(abs(df_fine['LAT'] - lat_int[cross_inds]))
-            #print df_fine['cross_coords']
             print np.shape(df_fine)
 
             out_data = pd.concat([out_data, df_fine])
 
-
-
     tstop = time.time()
     print "Elapsed time (Interpolation and crossing detection): %g seconds"%(tstop - tstart) 
-
     return out_data
 
 
@@ -254,14 +223,16 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
 
             # where you left off: time and frequency (line 1800)
-            t = c.tg + sc.DT/2.0
-            f = c.frequency + sc.DF/2.0
-            pwr = c.power/(sc.DT*EA_array['EA_length'][EA_ind])      # Jacob divides by num_rays too, but it looks like it's always 1
+            t = c.tg + sc.T_STEP/2.0
+            f = c.frequency + sc.F_STEP/2.0
+            # Jacob divides by num_rays too -- since he stores total power in each cell. Average?
+            # Do we need to do that here? I'm not doing that right now.
+            pwr = c.power/(sc.T_STEP*EA_array['EA_length'][EA_ind])      
             psi = c.psi*sc.D2R
 
-            print "EA_length: ",EA_array['EA_length'][EA_ind]
-            print "Pwr: ",pwr       
-            print "DT: ",sc.DT
+            # print "EA_length: ",EA_array['EA_length'][EA_ind]
+            # print "Pwr: ",pwr       
+            # print "DT: ",sc.DT
             #print pwr
 
             # Maybe threshold power here?
@@ -299,7 +270,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                      np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
 
 
-            print "Byw_sq: ",Byw_sq
+            print ("t: %g, f: %g, pwr: %g, Byw_sq: %g"%(t,f,pwr,Byw_sq))
             # RMS wave components
             Byw = np.sqrt(Byw_sq);
             Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
@@ -361,90 +332,81 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
 
                
 
-                # Where you left off: Adding in the next loop (V_TOT). Need to iterate from estarti to eendi
-                # for each cell in the 2d arrays... hmm.... how to vectorize nicely. Hmm.
-                #print "e_starti is", np.shape(e_starti)
-                # evec_inds = np.aragne(e_starti,e_endi)
+                # energy bins to calculate at:
+                evec_inds = np.arange(e_starti,e_endi,dtype=int)
+
+                v_tot = direction*sc.v_tot_arr[evec_inds]
+                v_para = v_tot*calph
+                v_perp = abs(v_tot*salph)
+
+                # Relativistic factor
+                gamma = 1.0/np.sqrt(1.0 - pow(v_tot/sc.C, 2))
+
+                alpha2 = sc.Q_EL*Ezw /(sc.M_EL*gamma*w1*v_perp)
                 
-                for e_toti in np.arange(e_starti,e_endi):
+                beta = kx*v_perp/wh
 
+                wtau_sq = (pow((-1),(mres-1)) * w1/gamma * 
+                            ( jn( (mres-1), beta ) - 
+                              alpha1*jn( (mres+1) , beta ) +
+                              gamma*alpha2*jn( mres , beta ) ))
 
-                    v_tot = direction*sc.v_tot_arr[e_toti]
-                    v_para = v_tot*calph
-                    v_perp = abs(v_tot*salph)
+                T1 = -wtau_sq*(1 + calph*calph/(mres*Y - 1))
 
-                    # Relativistic factor
-                    gamma = 1.0/np.sqrt(1.0 - pow(v_tot/sc.C, 2))
+                # Analytical evaluation! (Line 1938)
+                if (abs(lat) < 1e-3):        
 
-                    alpha2 = sc.Q_EL*Ezw /(sc.M_EL*gamma*w1*v_perp)
-                    #alpha2 = (sc.Q_EL/sc.M_EL)*(Ezw/w1)/(gamma*v_perp)
+                    eta_dot = mres*wh/gamma - w - kz*v_para
 
-                    beta = kx*v_perp/wh
+                    eta_mask = eta < 10
+                    dalpha_eq[eta_mask]  = abs(T1[eta_mask] /v_para[eta_mask])*ds/np.sqrt(2)
+                    dalpha_eq[~eta_mask] = abs(T1[~eta_mask]/eta_dot[~eta_mask])*np.sqrt(1-np.cos(ds*eta_dot[~eta_mask]/v_para[~eta_mask]))
 
-                    #mr = mres[index[1]]
-                  
-                    wtau_sq = (pow((-1),(mres-1)) * w1/gamma * 
-                                ( jn( (mres-1), beta ) - 
-                                  alpha1*jn( (mres+1) , beta ) +
-                                  gamma*alpha2*jn( mres , beta ) ))
+                else:
+                    v_para_star = v_para - dv_para_ds*ds/2.0
+                    v_para_star_sq = v_para_star*v_para_star
 
-                    T1 = -wtau_sq*(1 + calph*calph/(mres*Y - 1))
+                    AA =( (mres/(2.0*v_para_star*gamma))*dwh_ds* 
+                          (1 + ds/(2.0*v_para_star)*dv_para_ds) - 
+                           mres/(2.0*v_para_star_sq*gamma)*wh*dv_para_ds + 
+                           w/(2.0*v_para_star_sq)*dv_para_ds )
 
-                    # Analytical evaluation! (Line 1938)
-                    if (abs(lat) < 1e-3):        
-    
-                        eta_dot = mres*wh/gamma - w - kz*v_para;
-    
-                        if(fabs(eta_dot)<10):
-                            dalpha_eq = fabs(T1/v_para)*ds/sqrt(2); 
-                        else:
-                            dalpha_eq = fabs(T1/eta_dot)*sqrt(1-cos(ds*eta_dot/v_para))
-    
+                    BB =( mres/(gamma*v_para_star)*wh - 
+                          mres/(gamma*v_para_star)*dwh_ds*(ds/2.0) -
+                          w/v_para_star - kz )
+
+                    Farg = (BB + 2.0*AA*ds) / np.sqrt(2.0*np.pi*abs(AA))
+                    Farg0 = BB / np.sqrt(2*np.pi*abs(AA))
+
+                    Fs,  Fc  = fresnel(Farg)
+                    Fs0, Fc0 = fresnel(Farg0)
+
+                    dFs_sq = pow(Fs - Fs0, 2)
+                    dFc_sq = pow(Fc - Fc0, 2)
+
+                    dalpha = np.sqrt( (np.pi/4.0)/abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
+                    alpha_eq_p = np.arcsin( np.sin(alpha_lc+dalpha)*pow(clat,3) / np.sqrt(slat_term) )
+                    dalpha_eq  = alpha_eq_p - alpha_eq
+                    #print "dalpha_eq:", dalpha_eq
+                    #print "output vec shape:", np.shape(dalpha_eq)
+                    #print "end - start:", endi - starti
+
+                    #print "t offset:",t.iloc[index[0]]
+                    # Add net change in alpha to total array:
+                    if direction > 0: 
+                        #print "Norf!"
+
+                        tt = np.round( (t + ftc_N/v_para)/sc.T_STEP ).astype(int)
+                        #print tt
+                        tt = np.clip(tt,0,sc.NUM_STEPS - 1)
+                        #tt.clip(0,sc.NUM_STEPS)
+                        DA_array_N[evec_inds,tt] += dalpha_eq*dalpha_eq
                     else:
-                        v_para_star = v_para - dv_para_ds*ds/2.0
-                        v_para_star_sq = v_para_star*v_para_star
-
-                        AA =( (mres/(2.0*v_para_star*gamma))*dwh_ds* 
-                              (1 + ds/(2.0*v_para_star)*dv_para_ds) - 
-                               mres/(2.0*v_para_star_sq*gamma)*wh*dv_para_ds + 
-                               w/(2.0*v_para_star_sq)*dv_para_ds )
-
-                        BB =( mres/(gamma*v_para_star)*wh - 
-                              mres/(gamma*v_para_star)*dwh_ds*(ds/2.0) -
-                              w/v_para_star - kz )
-
-                        Farg = (BB + 2.0*AA*ds) / np.sqrt(2.0*np.pi*abs(AA))
-                        Farg0 = BB / np.sqrt(2*np.pi*abs(AA))
-
-                        Fs,  Fc  = fresnel(Farg)
-                        Fs0, Fc0 = fresnel(Farg0)
-
-                        dFs_sq = pow(Fs - Fs0, 2)
-                        dFc_sq = pow(Fc - Fc0, 2)
-
-                        dalpha = np.sqrt( (np.pi/4.0)/abs(AA))*abs(T1/v_para)*np.sqrt(dFs_sq + dFc_sq)
-                        alpha_eq_p = np.arcsin( np.sin(alpha_lc+dalpha)*pow(clat,3) / np.sqrt(slat_term) )
-                        dalpha_eq  = alpha_eq_p - alpha_eq
-                        #print "dalpha_eq:", dalpha_eq
-                        #print "output vec shape:", np.shape(dalpha_eq)
-                        #print "end - start:", endi - starti
-
-                        #print "t offset:",t.iloc[index[0]]
-                        # Add net change in alpha to total array:
-                        if direction > 0: 
-                            #print "Norf!"
-
-                            tt = np.round( (t + ftc_N/v_para)/sc.T_STEP ).astype(int)
-                            #print tt
-                            tt = np.clip(tt,0,sc.NUM_STEPS - 1)
-                            #tt.clip(0,sc.NUM_STEPS)
-                            DA_array_N[e_toti,tt] += dalpha_eq*dalpha_eq
-                        else:
-                            #print "Souf!" 
-                            tt = np.round( (t + ftc_S/v_para)/sc.T_STEP ).astype(int)
-                            tt = np.clip(tt,0,sc.NUM_STEPS - 1)
-                            #print tt
-                            DA_array_S[e_toti,tt] += dalpha_eq*dalpha_eq
+                        #print "Souf!" 
+                        tt = np.round( (t + ftc_S/v_para)/sc.T_STEP ).astype(int)
+                        tt = np.clip(tt,0,sc.NUM_STEPS - 1)
+                        #print tt
+                        DA_array_S[evec_inds,tt] += dalpha_eq*dalpha_eq
 
 
 
@@ -877,7 +839,7 @@ def interp_dataframe(df, t_new, t_label, cols=None):
 
 
 
-def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long = 0.7):
+def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dlong = 0.7):
     ''' Calculates initial power of the ray at top of ionosphere
         Accounts for ionospheric absorption (currently Helliwell model).
         Inputs:
@@ -892,7 +854,7 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long =
 
     # Latitude distance, longitude distance between source and ray
     dist_lat = (sc.R_E + sc.H_IONO/2.0)*abs(center_lat - ray_lat)*sc.D2R    
-    dist_long= (sc.R_E + sc.H_IONO/2.0)*abs(dist_long)*sc.D2R
+    dist_long= (sc.R_E + sc.H_IONO/2.0)*abs(dlong)*sc.D2R
     #print "dist_lat: ",dist_lat,"dist_long: ",dist_long
 
     dist_iono = np.hypot(dist_lat, dist_long)
@@ -912,9 +874,10 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dist_long =
 
     S_vert = S * np.cos(xi)*atten_factor   # Vertical component
 
+    # print ("I0: %2.3f, center_lat: %2.3f, dlat: %2.3f, dfreq: %2.3f, f: %ld, lat: %2.3f, dlong: %g, S_vert: %e"
+    #         %(I0, center_lat, dlat, dfreq, frequency, ray_lat, dlong, S_vert))
+
     print "S_vert:", S_vert
-
-
     # I don't know where Jacob got this attenuation factor from. Geometric spreading? Hmm.
     return S_vert * dlat * sc.D2R * (sc.R_E + sc.H_IONO) * dfreq * 0.87788331
 
@@ -993,7 +956,12 @@ class ray_interpolator(object):
         self.TL.frequency = TL.frequency
         self.TH.frequency = TH.frequency
 
+        # print self.BL['tg']
+
     def interpolation_weights(self, interp_grid):
+
+        assert np.shape(interp_grid)[1] == 2, "Interpolation grid is not two columns!"
+
         BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
         TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
         BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
@@ -1002,19 +970,16 @@ class ray_interpolator(object):
         return BL_fact, TL_fact, BH_fact, TH_fact
     def all_vals_at(self, interp_grid, val_name, mask):
         '''Returns interpolated values at each time step, and each factor.
-           interp_grid: two-column array -- (t, f) interpolating values, 0 to 1.
+           interp_grid: two-column array -- (l, f) interpolating values, 0 to 1.
            val_name: name of the column to interpolate
            mask: binary mask of time bins to look at '''
         # Interpolating weights:
-        # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-        # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-        # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-        # TH_fact = interp_grid[:,0]*interp_grid[:,1]
+
         BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
 
-        return (np.outer(self.BL[val_name][mask], BL_fact) + 
-                    np.outer(self.BH[val_name][mask], TL_fact) + 
-                    np.outer(self.TL[val_name][mask], BH_fact) + 
+        return (    np.outer(self.BL[val_name][mask], BL_fact) + 
+                    np.outer(self.BH[val_name][mask], BH_fact) + 
+                    np.outer(self.TL[val_name][mask], TL_fact) + 
                     np.outer(self.TH[val_name][mask], TH_fact)).ravel()
 
     def vals_at(self, interp_grid, val_name, mask):
@@ -1022,16 +987,12 @@ class ray_interpolator(object):
            BL, TL, BH, TH: Interpolating weights (vectors).
            val_name: name of the column to interpolate
            mask: binary mask of time bins to look at '''
-        # BL_fact = 1 - interp_grid[:,0]-interp_grid[:,1] + interp_grid[:,0]*interp_grid[:,1]
-        # TL_fact = interp_grid[:,0] - interp_grid[:,0]*interp_grid[:,1]
-        # BH_fact = interp_grid[:,1] - interp_grid[:,0]*interp_grid[:,1]
-        # TH_fact = interp_grid[:,0]*interp_grid[:,1]
 
         BL_fact, TL_fact, BH_fact, TH_fact = self.interpolation_weights(interp_grid)
 
         return (self.BL[val_name][mask]*BL_fact + 
-                self.BH[val_name][mask]*TL_fact + 
-                self.TL[val_name][mask]*BH_fact + 
+                self.BH[val_name][mask]*BH_fact + 
+                self.TL[val_name][mask]*TL_fact + 
                 self.TH[val_name][mask]*TH_fact)
 
     def dataframe_at(self, interp_grid, mask):
@@ -1048,7 +1009,6 @@ class ray_interpolator(object):
                            self.BH.frequency*BH_fact + 
                            self.TL.frequency*TL_fact + 
                            self.TH.frequency*TH_fact)
-        #print df['frequency']
         return df
 
 if __name__ =='__main__':

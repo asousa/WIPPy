@@ -22,24 +22,25 @@ H_MAGNETO = 1e6 # Height of top of ionosphere, in meters
 Z0 = 377.0      # Free-space impedance
 A = 5e3         # Constant for lightning power calculation
 B = 1e5         # Constant for lightning power calculation
-H_E = 5000      # Lightning incident height, in meters? (Confirm this pls)
+H_E = 5000.0    # Lightning incident height, in meters? (Confirm this pls)
 
 # Scattering code simulation params:
-T_MAX = 10 #5.0        #30.0
-NUM_STEPS =  400 #30000
+T_MAX = 5 #5.0        #30.0
+NUM_STEPS =  500 #30000
 T_STEP = (1.0*T_MAX)/NUM_STEPS
 
 # Degrees latitude around flash latitude that we'll use rays from:
 LAT_SPREAD = 80
 
 # Number of steps in fine-grid interpolation:
-DIV_LAT_NUM = 2 #6   # 2 does endpoints only
-DIV_FREQ_NUM = 2 #6
+#DIV_LAT_NUM = 2 #6   # 2 does endpoints only
+#DIV_FREQ_NUM = 11 #6
 
 # Spacing between final time-frequency grids:
 DT = T_STEP     # No extra interpolation here
-DF = 50         # Hz. REWORK THIS ONCE YOU ADD IN MULTIPLE FREQUENCIES AUSTIN
-F_STEP = 1      # Hz. Separation in frequency. (i.e., do 1-hz interpolation)
+#DF = 50         # Hz. REWORK THIS ONCE YOU ADD IN MULTIPLE FREQUENCIES AUSTIN
+F_STEP = 10     # Hz. Separation in frequency. (i.e., do 1-hz interpolation)
+LAT_STEP = 0.1    # Degrees interpolation of launch rays
 
 # EA array grid settings:
 # (EA = "Equal Area" -- defines a set of equal-area latitude slices
@@ -50,7 +51,7 @@ EAIncr = 1.0    # Step size (degrees)
 
 # Size of bounding boxes for crossing detection:
 # (Width around a field line, in L-shells, in which to consider a crossing)
-L_MARGIN = 0.11 #6e-4  #0.1 #(in L-shells)
+L_MARGIN = 0.1 #6e-4  #0.1 #(in L-shells)
 
 
 # Energy bins for resonant scattering calculation:
