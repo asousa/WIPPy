@@ -393,6 +393,7 @@ printf("dlat: %2.3f, dfreq: %2.3f, DIV_LAT_NUM: %2.3f, DIV_FREQ_NUM %2.3f\n", dl
       //     TR_lat_prev = interpPt( TR->tg, TR->lat, TR->numSteps, t_prev); 
       //   }
 
+
         BL_lat = interpPt( BL->tg, BL->lat, BL->numSteps, t); 
         TL_lat = interpPt( TL->tg, TL->lat, TL->numSteps, t);
         BR_lat = interpPt( BR->tg, BR->lat, BR->numSteps, t);
@@ -405,6 +406,14 @@ printf("dlat: %2.3f, dfreq: %2.3f, DIV_LAT_NUM: %2.3f, DIV_FREQ_NUM %2.3f\n", dl
         // lat_time = t;
 
      
+        // if (t==T_MAX - T_STEP) {
+        //   printf("FINAL POWERS: %g %g %g %g\n",
+        //     interpPt( BL->tg, BL->pwr, BL->numSteps, t),
+        //     interpPt( TL->tg, TL->pwr, TL->numSteps, t),
+        //     interpPt( BR->tg, BR->pwr, BR->numSteps, t),
+        //     interpPt( TR->tg, TR->pwr, TR->numSteps, t) );
+        // }
+
     // do interpolations within the 4 rays!
 
     for(div_lat=0; div_lat<=1; div_lat += 1.0/DIV_LAT_NUM) {
@@ -558,8 +567,8 @@ void checkCross(double BL_fact, double TL_fact, double BR_fact,
       pwr = ( interpPt( BL->tg, BL->pwr, BL->numSteps, t)*BL_fact + 
           interpPt( TL->tg, TL->pwr, TL->numSteps, t)*TL_fact +
           interpPt( BR->tg, BR->pwr, BR->numSteps, t)*BR_fact +
-          interpPt( TR->tg, TR->pwr, TR->numSteps, t)*TR_fact  );
-              // / (EA_length) ;  // NB - we divided by EA length!
+          interpPt( TR->tg, TR->pwr, TR->numSteps, t)*TR_fact  )
+          / (EA_length) ;  // NB - we divided by EA length!
 
       // refractive index
       mu =  ( interpPt( BL->tg, BL->mu, BL->numSteps, t)*BL_fact + 
@@ -674,7 +683,7 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
     ds = L*R_E* slat_term*clat*EAIncr/180*PI * MULT ; 
     dv_para_ds = -0.5*pow(salph,2)/calph/wh*dwh_ds;
     
-    printf("\nEA at lat: %g", lat);
+    printf("\nEA at lat: %g\n", lat);
     //printf("lat: %g, wh: %g, dwh_ds: %g, flt_const_N: %g \n",
     //     lat, wh, dwh_ds, flt_const_N);
     //printf("flt_const_S: %g, alpha_lc: %g, \nds: %g, dv_para_ds: %g\n", 
@@ -686,7 +695,7 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
       
       t = next->t + T_STEP/2;   // We want the time and freq to be in the 
       f = next->f + F_STEP/2;   // center of the cell, so add DT/2 or DF/2
-      pwr = (next->pwr)/(next->num_rays)/T_STEP; // <-I know this looks wrong 
+      pwr = (next->pwr)/(next->num_rays)/(T_STEP); // <-I know this looks wrong 
       psi = (next->psi)/(next->num_rays)*D2R;   // but it's right!
                         // Grrr... back off!
       // printf("\npwr: %e\n",pwr);
@@ -701,8 +710,7 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
       stixR = (next->stixR)/(next->num_rays);
       stixL =   (next->stixL)/(next->num_rays);
       
-      // printf("t: %g, f: %g, pwr: %g, psi: %g,\nmu: %g, stixP: %g, stixR:
-      //       %g, stixL: %g \n\n", t, f, pwr, psi, mu, stixP, stixR, stixL);
+      // printf("t: %g, f: %g, pwr: %g, psi: %g,\nmu: %g, stixP: %g, stixR: %g, stixL: %g \n\n", t, f, pwr, psi, mu, stixP, stixR, stixL);
       
       
       spsi = sin(psi);
@@ -989,6 +997,8 @@ void getFltConst(double L, double lat, double alpha_eq,
   *flt_const_N = L*R_E*(walt_tau - I);
   *flt_const_S = L*R_E*(walt_tau + I);
 
+  // printf("Flight constant: L: %g, lat: %g, alpha_eq: %g, fN: %g, fS: %g\n",L, lat, alpha_eq, *flt_const_N, *flt_const_S);
+
 }
 
 
@@ -1226,6 +1236,9 @@ void initPwr(float i0, rayT *BL, rayT *TL, rayT *BR, rayT *TR)
     for(j=1;j<TR->numSteps;j++) TR->pwr[j]=TR->pwr[j]*TR->pwr[0];
   //}
 
+    // printf("\n Initial powers: %g, %g, %g, %g\n",BL->pwr[0], TL->pwr[0],BR->pwr[0],TR->pwr[0]);
+    // printf(" Additional powers: %g, %g, %g, %g\n",
+    //         BL->pwr[100], TL->pwr[100],BR->pwr[100],TR->pwr[100]);
 }
 
 
@@ -1672,7 +1685,7 @@ void addToArr(cellT *lat_arr[][NUM_TARGS],double t, double f,
   //f_grid = floor(f/DF)*DF ;
   t_grid = t;
   f_grid = f;
-  // printf("t: %g, T_STEP: %g, t_grid: %g\n",t,T_STEP, t_grid);
+  // printf("ADDING AT t: %g, T_STEP: %g, t_grid: %g\n",t,T_STEP, t_grid);
 
   // CASE 1: if NO entries exist at lami
   
@@ -1857,6 +1870,9 @@ void addToAlphaArr(float **arr_N, float **arr_S,
 {
   int veli, timei, ei, ti, direction; 
 
+            // addToAlphaArr(&arr_N, &arr_S, (t+flt_time), 
+            //       direction*e_toti, dalpha_eq);
+
 
   // If arrays don't exist, create + initialise
   if(*arr_N==NULL || *arr_S==NULL) {
@@ -1886,7 +1902,7 @@ void addToAlphaArr(float **arr_N, float **arr_S,
   
   
   // get Correct index into array
-  timei = floor(iono_time / T_STEP);
+  timei = floor(iono_time /(1.0*T_STEP));
   
   // Enter dalpha^2 into array
   if(timei < NUM_TIMES) {  // check that arrival time < final time

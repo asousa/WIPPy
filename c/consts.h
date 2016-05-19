@@ -32,9 +32,9 @@
 
 
 // Time axis for simulation (axis to be interpolated onto -- not raytracer!)
-#define     T_MAX        5   // T_MAX
-#define     NUM_STEPS    500
-#define     T_STEP (1.0*T_MAX)/NUM_STEPS
+#define     T_MAX        10   // T_MAX
+#define     NUM_STEPS    1000
+#define     T_STEP 1.0*((1.0*T_MAX)/NUM_STEPS)
 
 #define     LAT_SPREAD 80
 

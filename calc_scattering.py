@@ -86,10 +86,13 @@ def calc_scattering(directory, I0, center_lat, lower_freq, upper_freq, L_shells)
         print "dfreq:", dfreq
         print "MAX_POWER:", MAX_POWER
         # (initPwr)
-        BL.power *=lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
-        BH.power *=lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.launch_lat, 0.7);
-        TL.power *=lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
-        TH.power *=lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
+        BL.power =BL.power * lightning_power(I0, center_lat, dlat, dfreq, BL.frequency, BL.launch_lat, 0.7);
+        BH.power =BH.power * lightning_power(I0, center_lat, dlat, dfreq, BH.frequency, BH.launch_lat, 0.7);
+        TL.power =TL.power * lightning_power(I0, center_lat, dlat, dfreq, TL.frequency, TL.launch_lat, 0.7);
+        TH.power =TH.power * lightning_power(I0, center_lat, dlat, dfreq, TH.frequency, TH.launch_lat, 0.7);
+
+        # print "Initial powers: %g, %g, %g, %g"%(BL['power'].iloc[0], BH['power'].iloc[0], TL['power'].iloc[0], TH['power'].iloc[0])
+        # print "Additional powers: %g, %g, %g, %g"%(BL['power'].iloc[100], BH['power'].iloc[100], TL['power'].iloc[100], TH['power'].iloc[100])
 
         # Interpolate onto uniform time grid (first half of doInterp)
         t = np.linspace(sc.T_STEP, sc.T_MAX, sc.NUM_STEPS)  # New sampling grid
@@ -228,6 +231,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
             # Jacob divides by num_rays too -- since he stores total power in each cell. Average?
             # Do we need to do that here? I'm not doing that right now.
             pwr = c.power/(sc.T_STEP*EA_array['EA_length'][EA_ind])      
+            # pwr = c.power/sc.T_STEP
             psi = c.psi*sc.D2R
 
             # print "EA_length: ",EA_array['EA_length'][EA_ind]
@@ -270,7 +274,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                      np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
 
 
-            print ("t: %g, f: %g, pwr: %g, Byw_sq: %g"%(t,f,pwr,Byw_sq))
+            print ("t: %g, f: %g, pwr: %g, psi: %g\nmu: %g, stixP: %g, stixR: %g, stixL: %g Byw_sq: %g"%(t,f,pwr,psi,mu, stixP, stixR, stixL, Byw_sq))
             # RMS wave components
             Byw = np.sqrt(Byw_sq);
             Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
@@ -395,15 +399,16 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                     # Add net change in alpha to total array:
                     if direction > 0: 
                         #print "Norf!"
-
-                        tt = np.round( (t + ftc_N/v_para)/sc.T_STEP ).astype(int)
+                        iono_time = t + abs(ftc_N/v_para)
+                        tt = np.round( iono_time/sc.T_STEP ).astype(int)
                         #print tt
                         tt = np.clip(tt,0,sc.NUM_STEPS - 1)
                         #tt.clip(0,sc.NUM_STEPS)
                         DA_array_N[evec_inds,tt] += dalpha_eq*dalpha_eq
                     else:
                         #print "Souf!" 
-                        tt = np.round( (t + ftc_S/v_para)/sc.T_STEP ).astype(int)
+                        iono_time = t + abs(ftc_S/v_para)
+                        tt = np.round( iono_time/sc.T_STEP ).astype(int)
                         tt = np.clip(tt,0,sc.NUM_STEPS - 1)
                         #print tt
                         DA_array_S[evec_inds,tt] += dalpha_eq*dalpha_eq
@@ -678,6 +683,8 @@ def get_flight_time_constant(L, lat, alpha_eq):
 
     #print flight_time_N/sc.C
     #print flight_time_S/sc.C
+
+    print ("Flight constant: L: %g, lat: %g, alpha_eq: %g, fN: %g, fS: %g\n"%(L, lat, alpha_eq, flight_time_N, flight_time_S))
 
     return flight_time_N, flight_time_S
 

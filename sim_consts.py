@@ -25,8 +25,8 @@ B = 1e5         # Constant for lightning power calculation
 H_E = 5000.0    # Lightning incident height, in meters? (Confirm this pls)
 
 # Scattering code simulation params:
-T_MAX = 5 #5.0        #30.0
-NUM_STEPS =  500 #30000
+T_MAX = 10 #5.0        #30.0
+NUM_STEPS =  1000 #30000
 T_STEP = (1.0*T_MAX)/NUM_STEPS
 
 # Degrees latitude around flash latitude that we'll use rays from:
