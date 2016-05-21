@@ -274,7 +274,7 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                      np.sqrt( pow((np.tan(psi)-rho1*rho2*stixX),2) + pow((1+rho2*rho2*stixX),2)) )
 
 
-            print ("t: %g, f: %g, pwr: %g, psi: %g\nmu: %g, stixP: %g, stixR: %g, stixL: %g Byw_sq: %g"%(t,f,pwr,psi,mu, stixP, stixR, stixL, Byw_sq))
+            # print ("t: %g, f: %g, pwr: %g, psi: %g\nmu: %g, stixP: %g, stixR: %g, stixL: %g Byw_sq: %g"%(t,f,pwr,psi,mu, stixP, stixR, stixL, Byw_sq))
             # RMS wave components
             Byw = np.sqrt(Byw_sq);
             Exw = abs(sc.C*Byw * (stixP - n_x*n_x)/(stixP*n_z))
@@ -361,8 +361,9 @@ def calc_resonant_pitchangle_change(crossing_df, L_target):
                 if (abs(lat) < 1e-3):        
 
                     eta_dot = mres*wh/gamma - w - kz*v_para
-
-                    eta_mask = eta < 10
+                    dalpha_eq = np.zeros_like(eta_dot)
+                    
+                    eta_mask = eta_dot < 10
                     dalpha_eq[eta_mask]  = abs(T1[eta_mask] /v_para[eta_mask])*ds/np.sqrt(2)
                     dalpha_eq[~eta_mask] = abs(T1[~eta_mask]/eta_dot[~eta_mask])*np.sqrt(1-np.cos(ds*eta_dot[~eta_mask]/v_para[~eta_mask]))
 
@@ -684,7 +685,7 @@ def get_flight_time_constant(L, lat, alpha_eq):
     #print flight_time_N/sc.C
     #print flight_time_S/sc.C
 
-    print ("Flight constant: L: %g, lat: %g, alpha_eq: %g, fN: %g, fS: %g\n"%(L, lat, alpha_eq, flight_time_N, flight_time_S))
+    # print ("Flight constant: L: %g, lat: %g, alpha_eq: %g, fN: %g, fS: %g\n"%(L, lat, alpha_eq, flight_time_N, flight_time_S))
 
     return flight_time_N, flight_time_S
 
@@ -884,7 +885,7 @@ def lightning_power(I0, center_lat, dlat, dfreq, frequency, ray_lat, dlong = 0.7
     # print ("I0: %2.3f, center_lat: %2.3f, dlat: %2.3f, dfreq: %2.3f, f: %ld, lat: %2.3f, dlong: %g, S_vert: %e"
     #         %(I0, center_lat, dlat, dfreq, frequency, ray_lat, dlong, S_vert))
 
-    print "S_vert:", S_vert
+    # print "S_vert:", S_vert
     # I don't know where Jacob got this attenuation factor from. Geometric spreading? Hmm.
     return S_vert * dlat * sc.D2R * (sc.R_E + sc.H_IONO) * dfreq * 0.87788331
 

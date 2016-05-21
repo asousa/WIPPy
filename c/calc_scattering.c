@@ -25,9 +25,12 @@ int     EA_NUMROWS;
 int     EA_NUMCOLS;
 
 double      L_TARG;
-//double      LAT_TARG[]  =   { 0.0 };
-//double      LAT_MARGIN[]    =   { 80.0 };
+
 int     NUM_TARGS   =   1;
+
+
+
+
 
 FILE *logfile;
 
@@ -98,11 +101,11 @@ void doInterp(rayT *BL, rayT *TL, rayT *BR, rayT *TR,
           cellT *lat_arr[][NUM_TARGS], double *EAarrPtr);
 float smallest(float n1, float n2, float n3, float n4);
 FILE *writeFile(long lower_freq, char *pref, char *suff);
-void addToLFile(double BL_fact, double TL_fact, double BR_fact, 
-        double TR_fact, double t, FILE *outPtr, 
-        rayT *BL, rayT *TL, rayT *BR, rayT *TR, 
-        double div_lat, double div_freq, 
-        double l_int, double lat_int);
+// void addToLFile(double BL_fact, double TL_fact, double BR_fact, 
+        // double TR_fact, double t, FILE *outPtr, 
+        // rayT *BL, rayT *TL, rayT *BR, rayT *TR, 
+        // double div_lat, double div_freq, 
+        // double l_int, double lat_int);
 void checkCross(double BL_fact, double TL_fact, double BR_fact,
         double TR_fact, double t, cellT *lat_arr[][NUM_TARGS], 
         rayT *BL, rayT *TL, rayT *BR, rayT *TR, 
@@ -175,7 +178,7 @@ int main(int argc, char *argv[])
 
   // --------------  get arguments from command line ---------------
   if(argc != 7) 
-    { printf("Wrong number of input arguments (readOne)\n");  exit(0); }
+    { printf("Wrong number of input arguments (calc_scattering)\n");  exit(0); }
 
   
 
@@ -212,7 +215,7 @@ int main(int argc, char *argv[])
   // ----------------  Run initialization scripts -------------------
   EA_Arr = (double *)initEA_Arr();
   sprintf(freqSuff, "_%g", L_TARG);
-  outPtr = (FILE *)writeFile(lower_freq, freqPref, freqSuff);
+  // outPtr = (FILE *)writeFile(lower_freq, freqPref, freqSuff);
   initLatArr(lat_arr);
 
   // Open logfile:
@@ -253,7 +256,7 @@ int main(int argc, char *argv[])
 
   printf("made it past the while loop\n\n");
   // dispLatArr(lat_arr, outPtr);
-  fclose(outPtr);
+  // fclose(outPtr);
   if(ptrL != NULL) fclose(ptrL);
   if(ptrR != NULL) fclose(ptrR);
   free(EA_Arr);
@@ -335,35 +338,35 @@ printf("dlat: %2.3f, dfreq: %2.3f, DIV_LAT_NUM: %2.3f, DIV_FREQ_NUM %2.3f\n", dl
 
     // printf("now doing t= %g\n", t);
     t_prev = t - T_STEP;
-    BL_l = interpPt( BL->tg, BL->l_sh, BL->numSteps, t);
-    TL_l = interpPt( TL->tg, TL->l_sh, TL->numSteps, t);
-    BR_l = interpPt( BR->tg, BR->l_sh, BR->numSteps, t);
-    TR_l = interpPt( TR->tg, TR->l_sh, TR->numSteps, t);
-
-    BL_l_prev = interpPt( BL->tg, BL->l_sh, BL->numSteps,t_prev);
-    TL_l_prev = interpPt( TL->tg, TL->l_sh, TL->numSteps,t_prev);
-    BR_l_prev = interpPt( BR->tg, BR->l_sh, BR->numSteps,t_prev);
-    TR_l_prev = interpPt( TR->tg, TR->l_sh, TR->numSteps,t_prev);
-
-
-    // if(t==T_STEP) { 
-    //   // this is first time step, calc prev interpolated L
-    //   BL_l_prev = interpPt( BL->tg, BL->l_sh, BL->numSteps, 0);
-    //   TL_l_prev = interpPt( TL->tg, TL->l_sh, TL->numSteps, 0);
-    //   BR_l_prev = interpPt( BR->tg, BR->l_sh, BR->numSteps, 0);
-    //   TR_l_prev = interpPt( TR->tg, TR->l_sh, TR->numSteps, 0);
-    // } else {
-    //   // assign prev L values from previous loop
-    //   BL_l_prev = BL_l; 
-    //   TL_l_prev = TL_l; 
-    //   BR_l_prev = BR_l;  
-    //   TR_l_prev = TR_l; 
-    // }
-
     // BL_l = interpPt( BL->tg, BL->l_sh, BL->numSteps, t);
     // TL_l = interpPt( TL->tg, TL->l_sh, TL->numSteps, t);
     // BR_l = interpPt( BR->tg, BR->l_sh, BR->numSteps, t);
     // TR_l = interpPt( TR->tg, TR->l_sh, TR->numSteps, t);
+
+    // BL_l_prev = interpPt( BL->tg, BL->l_sh, BL->numSteps,t_prev);
+    // TL_l_prev = interpPt( TL->tg, TL->l_sh, TL->numSteps,t_prev);
+    // BR_l_prev = interpPt( BR->tg, BR->l_sh, BR->numSteps,t_prev);
+    // TR_l_prev = interpPt( TR->tg, TR->l_sh, TR->numSteps,t_prev);
+
+
+    if(t==T_STEP) { 
+      // this is first time step, calc prev interpolated L
+      BL_l_prev = interpPt( BL->tg, BL->l_sh, BL->numSteps, 0);
+      TL_l_prev = interpPt( TL->tg, TL->l_sh, TL->numSteps, 0);
+      BR_l_prev = interpPt( BR->tg, BR->l_sh, BR->numSteps, 0);
+      TR_l_prev = interpPt( TR->tg, TR->l_sh, TR->numSteps, 0);
+    } else {
+      // assign prev L values from previous loop
+      BL_l_prev = BL_l; 
+      TL_l_prev = TL_l; 
+      BR_l_prev = BR_l;  
+      TR_l_prev = TR_l; 
+    }
+
+    BL_l = interpPt( BL->tg, BL->l_sh, BL->numSteps, t);
+    TL_l = interpPt( TL->tg, TL->l_sh, TL->numSteps, t);
+    BR_l = interpPt( BR->tg, BR->l_sh, BR->numSteps, t);
+    TR_l = interpPt( TR->tg, TR->l_sh, TR->numSteps, t);
     // printf("BL_l: %f TL_l: %f BR_l: %f TR_l:%f\n", BL_l, TL_l, BR_l, TR_l);
 
     if( outsideL(BL_l, TL_l, BR_l, TR_l, &iTarg)  &&
@@ -379,19 +382,19 @@ printf("dlat: %2.3f, dfreq: %2.3f, DIV_LAT_NUM: %2.3f, DIV_FREQ_NUM %2.3f\n", dl
       // t_prev = t - T_STEP;
     
       // printf("lat_time: %2.3f, t_prev: %2.3f\n",lat_time, t_prev);
-      // if( lat_time == t_prev ) {   
-      //   // then lats already worked out at previous time step
-      //   BL_lat_prev = BL_lat;
-      //   TL_lat_prev = TL_lat;
-      //   BR_lat_prev = BR_lat;
-      //   TR_lat_prev = TR_lat;
-      //   } else {
+      if( lat_time == t_prev ) {   
+        // then lats already worked out at previous time step
+        BL_lat_prev = BL_lat;
+        TL_lat_prev = TL_lat;
+        BR_lat_prev = BR_lat;
+        TR_lat_prev = TR_lat;
+        } else {
 
-      //     BL_lat_prev = interpPt( BL->tg, BL->lat, BL->numSteps, t_prev); 
-      //     TL_lat_prev = interpPt( TL->tg, TL->lat, TL->numSteps, t_prev);
-      //     BR_lat_prev = interpPt( BR->tg, BR->lat, BR->numSteps, t_prev);
-      //     TR_lat_prev = interpPt( TR->tg, TR->lat, TR->numSteps, t_prev); 
-      //   }
+          BL_lat_prev = interpPt( BL->tg, BL->lat, BL->numSteps, t_prev); 
+          TL_lat_prev = interpPt( TL->tg, TL->lat, TL->numSteps, t_prev);
+          BR_lat_prev = interpPt( BR->tg, BR->lat, BR->numSteps, t_prev);
+          TR_lat_prev = interpPt( TR->tg, TR->lat, TR->numSteps, t_prev); 
+        }
 
 
         BL_lat = interpPt( BL->tg, BL->lat, BL->numSteps, t); 
@@ -399,20 +402,11 @@ printf("dlat: %2.3f, dfreq: %2.3f, DIV_LAT_NUM: %2.3f, DIV_FREQ_NUM %2.3f\n", dl
         BR_lat = interpPt( BR->tg, BR->lat, BR->numSteps, t);
         TR_lat = interpPt( TR->tg, TR->lat, TR->numSteps, t);
 
-        BL_lat_prev = interpPt( BL->tg, BL->lat, BL->numSteps, t_prev); 
-        TL_lat_prev = interpPt( TL->tg, TL->lat, TL->numSteps, t_prev);
-        BR_lat_prev = interpPt( BR->tg, BR->lat, BR->numSteps, t_prev);
-        TR_lat_prev = interpPt( TR->tg, TR->lat, TR->numSteps, t_prev);
-        // lat_time = t;
-
-     
-        // if (t==T_MAX - T_STEP) {
-        //   printf("FINAL POWERS: %g %g %g %g\n",
-        //     interpPt( BL->tg, BL->pwr, BL->numSteps, t),
-        //     interpPt( TL->tg, TL->pwr, TL->numSteps, t),
-        //     interpPt( BR->tg, BR->pwr, BR->numSteps, t),
-        //     interpPt( TR->tg, TR->pwr, TR->numSteps, t) );
-        // }
+        // BL_lat_prev = interpPt( BL->tg, BL->lat, BL->numSteps, t_prev); 
+        // TL_lat_prev = interpPt( TL->tg, TL->lat, TL->numSteps, t_prev);
+        // BR_lat_prev = interpPt( BR->tg, BR->lat, BR->numSteps, t_prev);
+        // TR_lat_prev = interpPt( TR->tg, TR->lat, TR->numSteps, t_prev);
+        lat_time = t;
 
     // do interpolations within the 4 rays!
 
@@ -595,7 +589,7 @@ void checkCross(double BL_fact, double TL_fact, double BR_fact,
        
       // print information to file if greater than 1e-6 of initial pwr
       //avePwr = ( TL->pwr[0] + BL->pwr[0] + TR->pwr[0] + BR->pwr[0] )/4.0;
-      fprintf(logfile,"CROSSING: %2.8f %2.8f %2.8f %2.8f %2.8f\n",t,r1ray,r2ray,lat_int_prev,lat_int);
+      // fprintf(logfile,"CROSSING: %2.8f %2.8f %2.8f %2.8f %2.8f\n",t,r1ray,r2ray,lat_int_prev,lat_int);
 
       addToArr(lat_arr, t, f, pwr, psi, mu, EA_i, iTarg, stixP, stixR, stixL);
     }
@@ -626,11 +620,12 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
   double t1, t2, t3, direction, v_para_res, v_tot, v_tot_res;
   double salph, calph, wtau_sq, Y, dv_para_ds, AA, BB, T1;
   double Farg, Farg0, Fs, Fc, Fs0, Fc0, dFs_sq, dFc_sq, dalpha;
-  double alpha_eq_p, dalpha_eq, e_starti, e_endi, E_res;
+  double alpha_eq_p, dalpha_eq, E_res, e_starti, e_endi;
   double v_tot_arr[NUM_E], E_tot_arr[NUM_E], v_para_star, v_para_star_sq;
   float *arr_N, *arr_S;
   time_t start, end;
 
+  double temp;
  
   // start = time(NULL);
   time(&start);
@@ -683,7 +678,7 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
     ds = L*R_E* slat_term*clat*EAIncr/180*PI * MULT ; 
     dv_para_ds = -0.5*pow(salph,2)/calph/wh*dwh_ds;
     
-    printf("\nEA at lat: %g\n", lat);
+    printf("EA at lat: %2.2f\n", lat);
     //printf("lat: %g, wh: %g, dwh_ds: %g, flt_const_N: %g \n",
     //     lat, wh, dwh_ds, flt_const_N);
     //printf("flt_const_S: %g, alpha_lc: %g, \nds: %g, dv_para_ds: %g\n", 
@@ -805,13 +800,18 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
         }
         v_para_res = ( direction*sqrt(t1 + t2*t3) - w*kz ) / t3;
         v_tot_res = v_para_res / cos(alpha_lc); 
-        E_res = E_EL*( 1/sqrt( 1-(v_tot_res*v_tot_res/(C*C)) ) -1 );
+        E_res = E_EL*( 1.0/sqrt( 1.0-(v_tot_res*v_tot_res/(C*C)) ) -1.0 );
 
       //printf("v_para_res: %6.2f\n",v_para_res);
       
-        // get starting and ending indices, +-20% energy band  
-        e_starti = floor(( log10(E_res)-E_EXP_BOT-0.3)/DE_EXP);
-        e_endi = ceil(( log10(E_res)-E_EXP_BOT+0.3)/DE_EXP);
+        // get starting and ending indices, +-20% energy band
+        // temp = floor((log10(E_res) - E_EXP_BOT - 0.3)/(DE_EXP));
+
+        // printf("temp: %g\n", temp);
+        e_starti = floor((log10(E_res) - E_EXP_BOT - 0.3)/(DE_EXP));
+        e_endi   =  ceil((log10(E_res) - E_EXP_BOT + 0.3)/(DE_EXP));
+        // printf("e_res: %g, e_starti: %g, e_endi: %g\n",E_res, e_starti, e_endi);
+
         if(e_endi>NUM_E) e_endi=NUM_E;
         if(e_starti>NUM_E) e_starti=NUM_E;
         if(e_endi<0) e_endi=0;
@@ -820,6 +820,10 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
 
         // begin V_TOT loop here
         for(e_toti=e_starti; e_toti < e_endi; e_toti++) {
+
+          // printf("E_EXP_BOT: %g, E_EXP_TOP: %g, DE_EXP: %g\n",E_EXP_BOT,E_EXP_TOP,DE_EXP);
+          // printf("e_res: %g, e_starti: %g, e_endi: %g\n",E_res, e_starti, e_endi);
+       
           v_tot = direction*v_tot_arr[e_toti];
           v_para = v_tot * calph;
           v_perp = fabs(v_tot * salph);
@@ -908,6 +912,7 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
             }
             addToAlphaArr(&arr_N, &arr_S, (t+flt_time), 
                   direction*e_toti, dalpha_eq);
+            // printf("e_toti = %d\n",e_toti);
           } // kk loop
 
          
@@ -941,8 +946,8 @@ void calcRes(cellT *lat_arr[][NUM_TARGS], long lower_freq)
       noutN=fprintf(resPtrN, "%e\t", arr_N[ei*NUM_TIMES+ti]);
       noutS=fprintf(resPtrS, "%e\t", arr_S[ei*NUM_TIMES+ti]);
 
-      arr_N[ei*NUM_TIMES+ti] = 0.0;
-      arr_S[ei*NUM_TIMES+ti] = 0.0;    
+      // arr_N[ei*NUM_TIMES+ti] = 0.0;
+      // arr_S[ei*NUM_TIMES+ti] = 0.0;    
     }
     fprintf(resPtrN,"\n");
     fprintf(resPtrS,"\n");
@@ -1066,62 +1071,6 @@ void dispLatArr(cellT *lat_arr[][NUM_TARGS],  FILE *outPtr)
 
 
 
-/*
- * FUNCTION: addToLFile
- * --------------------
- * This function is called from doInterp when a certain interpolated  
- * ray is within the right bounds and the point needs to be recorded
- * in the output file. 
- *
- * Parameters to record are:
- * 1. tg  - group time
- * 2. lat - local latitude on this L shell
- * 3. f   - ray frequency
- * 4. ll  - launch latitude
- * 5. pwr - landau damped ??? Initial power computed ???
- * 6. psi - wn wrt +ve B
- * 7. l_int - L value of ray
- *
- */
-
-void addToLFile(double BL_fact, double TL_fact, double BR_fact,
-    double TR_fact, double t, FILE *outPtr, 
-    rayT *BL, rayT *TL, rayT *BR, rayT *TR, 
-    double div_lat, double div_freq, 
-    double l_int, double lat)
-{
-  long f;
-  double ll, psi, pwr, dlat, dfreq, avePwr;
-  
-  // ray frequency
-  f = TL->f + div_freq*( TR->f - TL->f );
-  
-  // ray launch latitude
-  ll = BL->lat[0] + div_lat*( TL->lat[0] - BL->lat[0] );
-
-    
-  // ray wn angle wrt B0
-  psi = ( interpPt( BL->tg, BL->psi, BL->numSteps, t)*BL_fact + 
-    interpPt( TL->tg, TL->psi, TL->numSteps, t)*TL_fact +
-    interpPt( BR->tg, BR->psi, BR->numSteps, t)*BR_fact +
-    interpPt( TR->tg, TR->psi, TR->numSteps, t)*TR_fact  );
-
-  // ray pwr with Landau damping
-  pwr = ( interpPt( BL->tg, BL->pwr, BL->numSteps, t)*BL_fact + 
-    interpPt( TL->tg, TL->pwr, TL->numSteps, t)*TL_fact +
-    interpPt( BR->tg, BR->pwr, BR->numSteps, t)*BR_fact +
-    interpPt( TR->tg, TR->pwr, TR->numSteps, t)*TR_fact  );
-  
-  // print information to file if greater than 1e-6 of initial pwr
-  avePwr = ( TL->pwr[0] + BL->pwr[0] + TR->pwr[0] + BR->pwr[0] )/4.0;
-//  if( pwr > (1e-6 * avePwr) )   -- HEY AUSTIN, YOU EDITED THIS 6/11/15
-  // if( pwr > (WAVE_PWR_THRESH * avePwr) )
-  fprintf(outPtr,"%g %g %d %g %g %g %g\n",t,lat,f,ll,pwr,psi,l_int);
-  
-}
-
-
-
  
 
 
@@ -1172,7 +1121,7 @@ double ltgPwr(float i0, float center_lat, float dlat, float dfreq, long f,
   // printf("\ni0: %2.3f, center_lat: %2.3f, dlat: %2.3f, dfreq: %2.3f, f: %ld, lat: %2.3f, dlong: %2.3f, S_vert: %e\n",
   //           i0,        center_lat,        dlat,         dfreq,       f,      lat,        dlong,        S_vert);
 
-  printf("\n S_vert: %e\n",S_vert);
+  // printf("\n S_vert: %e\n",S_vert);
   // Integrate wrt space, assume slice-width=1m.  The correction 
   // factor 0.877... comes about so that its a 1m slice at 1000km
   // which means that at 100km its only 0.877m wide
@@ -1482,8 +1431,8 @@ FILE  *readFile( char *fileName, FILE *filePtr, rayT *ray, long f, float center_
       printf("\nFile %s\nOpened successfully! \n\n", fileName);
     }
     // Place the pointer after the header for reading in data
-    // fseek(filePtr, 146*sizeof(float), SEEK_SET);
-    fseek(filePtr, 578 , SEEK_SET);
+    fseek(filePtr, 146*sizeof(float), SEEK_SET);
+    //fseek(filePtr, 578 , SEEK_SET);
   }
 
 
@@ -1501,7 +1450,7 @@ FILE  *readFile( char *fileName, FILE *filePtr, rayT *ray, long f, float center_
         &(ray->mu[i]), &(ray->dens[i]), &(ray->anH[i]), 
         &(ray->anHe[i]), &(ray->anO[i]), &(ray->fH[i]), 
         &(ray->stixP[i]), &(ray->stixR[i]), 
-        &(ray->stixL[i]) ) < 17 ) {
+        &(ray->stixL[i]) ) == EOF ) {
       //fclose( filePtr );
       // ray->numSteps=0;
       return NULL;
@@ -1882,7 +1831,7 @@ void addToAlphaArr(float **arr_N, float **arr_S,
     *arr_N=(float *)malloc(NUM_E*NUM_TIMES*sizeof(float));
     *arr_S=(float *)malloc(NUM_E*NUM_TIMES*sizeof(float));
 
-    printf("\nInitializing Alpha... float is %2.0f\n",sizeof(float));
+    printf("\nInitializing Alpha... \n");
     printf("\nNUM_E: %d, NUM_TIMES: %d\n", NUM_E, NUM_TIMES);
 
     if(*arr_N==NULL || *arr_S==NULL) {
@@ -1903,15 +1852,16 @@ void addToAlphaArr(float **arr_N, float **arr_S,
   
   // get Correct index into array
   timei = floor(iono_time /(1.0*T_STEP));
-  
+  // printf("iono_time: %2.3f, timei: %d\n",iono_time, timei);
   // Enter dalpha^2 into array
   if(timei < NUM_TIMES) {  // check that arrival time < final time
     if(e_toti>= 0 && e_toti < NUM_E ) {
+      // printf("North:  %d, %d\n",timei, e_toti);
       *(*arr_N+(e_toti*NUM_TIMES+timei)) += ((dalpha*dalpha)/EA_SPLIT)/MULT;
     }
-    if(e_toti<= 0 && e_toti > -NUM_E ) {    
-      *(*arr_S + (abs(e_toti)*NUM_TIMES + timei)) += 
-    ((dalpha*dalpha)/EA_SPLIT)/MULT;
+    if(e_toti<= 0 && e_toti > -NUM_E ) {
+      // printf("South: %d, %d\n",timei, e_toti);    
+      *(*arr_S + (abs(e_toti)*NUM_TIMES + timei)) += ((dalpha*dalpha)/EA_SPLIT)/MULT;
     }
   }
 }
@@ -2296,7 +2246,7 @@ float interpPt(float *xI, float *yI, int n, float xO)
 
   // Check that xO is within bounds
   if( (xO < xI[0]) || xO > xI[n-1] ) {
-    printf("\nPoint is out of bounds!\a\n");
+    printf("\nPoint is out of bounds! %g, {%g, %g}\a\n",xO, xI[0], xI[n-1]);
     return 0.0;
   }
   
